@@ -5,16 +5,47 @@ type Task = {
   dependencies: string[];
 };
 
-type UnwrapFunctionResultPromise<T> = T extends (
-  ...args: any[]
-) => Promise<infer U>
-  ? (...args: Parameters<T>) => U
+type TaskOutput<T> = {
+  id: string;
+  result: T;
+  cancel: () => void;
+};
+
+interface RefPrimitive<T extends string | number | boolean> {
+  __kind__: T;
+}
+type Ref<T> = //
+  // if T is a primitive, return a RefPrimitive
+  T extends string | number | boolean
+    ? RefPrimitive<T>
+    : // if T is an array, return an array of Ref<T>
+    T extends Array<infer U>
+    ? Array<Ref<U>>
+    : // if T is an object, return an object with Ref<T> values
+    T extends Record<any, any>
+    ? { [Property in keyof T]: Ref<T[Property]> }
+    : never;
+
+type RefOrValue<T> = //
+  // if T is a primitive, return a RefPrimitive
+  T extends string | number | boolean
+    ? RefPrimitive<T> | T
+    : // if T is an array, return an array of Ref<T>
+    T extends Array<infer U>
+    ? Array<RefOrValue<U>>
+    : // if T is an object, return an object with Ref<T> values
+    T extends Record<any, any>
+    ? { [Property in keyof T]: RefOrValue<T[Property]> }
+    : never;
+
+type ChangeMethodSignature<T> = T extends (...args: any[]) => Promise<infer U>
+  ? (...args: RefOrValue<Parameters<T>>) => TaskOutput<Ref<U>>
   : never;
 
-type UnwrapFunctionsMap<T> = {
+type ChangeMethodSignaturesInObject<T> = {
   [Property in keyof T]: T[Property] extends (...args: any[]) => any
-    ? UnwrapFunctionResultPromise<T[Property]>
-    : UnwrapFunctionsMap<T[Property]>;
+    ? ChangeMethodSignature<T[Property]>
+    : ChangeMethodSignaturesInObject<T[Property]>;
 };
 
 interface Methods
@@ -28,22 +59,11 @@ const path = (obj: any, path: string[]) => {
   return res;
 };
 
-const getTaskProxy = (taskId: string, path: string[] = []) => {
-  const obj = { $ref: taskId, path };
-  return new Proxy(obj, {
-    get(target, prop, receiver) {
-      if (prop === "toJSON") {
-        return () => obj;
-      }
-      return getTaskProxy(taskId, [...path, prop.toString()]);
-    },
-  }) as any;
-};
-
 export class Pipeline<T extends Methods> {
   constructor(private methods: T) {}
 
   tasks: Task[] = [];
+  taskIndex: number = 0;
 
   state: Record<
     string,
@@ -55,12 +75,8 @@ export class Pipeline<T extends Methods> {
 
   runningTasks: Set<string> = new Set();
 
-  after(...tasks: any[]) {
-    const serializedTasks = JSON.parse(JSON.stringify(tasks));
-    return this.createDeferedMethods(
-      this.methods,
-      this.findRefs(serializedTasks)
-    );
+  after(...taskIds: string[]) {
+    return this.createDeferedMethods(this.methods, taskIds);
   }
 
   get defer() {
@@ -72,6 +88,10 @@ export class Pipeline<T extends Methods> {
     return this.replaceRefs(serializedValue);
   }
 
+  getNewTaskId() {
+    return `task${this.taskIndex++}`;
+  }
+
   private createDeferedMethods<T extends Methods>(
     methods: T,
     after: string[] = [],
@@ -79,30 +99,51 @@ export class Pipeline<T extends Methods> {
   ) {
     const self = this;
 
-    return new Proxy<UnwrapFunctionsMap<typeof methods>>(methods as any, {
-      get(target, prop: string, receiver) {
-        // if prop is not a function, proxy object values
-        if (typeof target[prop] !== "function") {
-          return self.createDeferedMethods(target[prop] as any, after, [
-            ...path,
-            prop.toString(),
-          ]);
-        }
+    return new Proxy<ChangeMethodSignaturesInObject<typeof methods>>(
+      methods as any,
+      {
+        get(target, prop: string, receiver) {
+          // if prop is not a function, proxy object values
+          if (typeof target[prop] !== "function") {
+            return self.createDeferedMethods(target[prop] as any, after, [
+              ...path,
+              prop.toString(),
+            ]);
+          }
 
-        // if prop is a function, return a proxy function
-        return (...args: any[]) => {
-          const serializedArgs = JSON.parse(JSON.stringify(args));
-          const taskId = `task${self.tasks.length}`;
-          self.tasks.push({
-            id: taskId,
-            method: [...path, prop.toString()],
-            args: serializedArgs,
-            dependencies: [...self.findRefs(serializedArgs), ...after],
-          });
-          return getTaskProxy(taskId);
-        };
+          // if prop is a function, return a proxy function
+          return (...args: any[]) => {
+            const serializedArgs = JSON.parse(JSON.stringify(args));
+            const taskId = self.getNewTaskId();
+            self.tasks.push({
+              id: taskId,
+              method: [...path, prop.toString()],
+              args: serializedArgs,
+              dependencies: [...self.findRefs(serializedArgs), ...after],
+            });
+            return {
+              id: taskId,
+              result: self.createResultReference(taskId),
+              cancel: () => {},
+            };
+          };
+        },
+      }
+    );
+  }
+
+  createResultReference(taskId: string, path: string[] = []) {
+    const self = this;
+
+    const obj = { $ref: taskId, path };
+    return new Proxy(obj, {
+      get(target, prop, receiver) {
+        if (prop === "toJSON") {
+          return () => obj;
+        }
+        return self.createResultReference(taskId, [...path, prop.toString()]);
       },
-    });
+    }) as any;
   }
 
   getTasksReadyToRun() {
@@ -139,6 +180,10 @@ export class Pipeline<T extends Methods> {
       continueRunning && (await this.runReadyTasks(continueRunning));
     });
     await Promise.all(promises);
+  }
+
+  async run() {
+    await this.runReadyTasks(true);
   }
 
   startRunningTasks(taskId: string) {

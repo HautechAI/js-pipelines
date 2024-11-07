@@ -9,7 +9,11 @@ const methods = {
       return "test";
     },
   },
-  generate: async (params: { imageId: string; prompt: string }) => {
+  generate: async (params: {
+    imageId: string;
+    prompt: string;
+    test?: { v: string };
+  }) => {
     return { id: "operationId1" };
   },
   waitOperation: async (operationId: string) => {
@@ -35,16 +39,17 @@ const pipeline = new Pipeline(methods);
 const task1 = pipeline.defer.generate({
   imageId: "image1",
   prompt: "test prompt",
+  test: { v: "123" },
 });
-const task2 = pipeline.defer.waitOperation(task1.id);
-const task3 = pipeline.defer.selectImage(task2.images[0]);
-const task4 = pipeline.defer.createStack([task1.id, task3.id]);
+const task2 = pipeline.defer.waitOperation(task1.result.id);
+const task3 = pipeline.defer.selectImage(task2.result.images[0]);
+const task4 = pipeline.defer.createStack([task1.result.id, task3.result.id]);
 const task5 = pipeline.defer.api.test();
 
 (async () => {
   console.log(JSON.stringify(pipeline.tasks, null, 2));
   console.log(pipeline.state);
-  await pipeline.runReadyTasks(true);
+  await pipeline.run();
   console.log(pipeline.state);
-  console.log(await pipeline.wait(task4.operations));
+  console.log(await pipeline.wait(task4.result));
 })();
