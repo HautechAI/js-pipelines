@@ -63,7 +63,7 @@ export class Pipeline<T extends Methods> {
   constructor(private methods: T) {}
 
   tasks: Task[] = [];
-  taskIndex: number = 0;
+  newTaskIndex: number = 0;
 
   state: Record<
     string,
@@ -74,6 +74,8 @@ export class Pipeline<T extends Methods> {
   > = {};
 
   runningTasks: Set<string> = new Set();
+
+  isRunning: boolean = false;
 
   after(...taskIds: string[]) {
     return this.createDeferedMethods(this.methods, taskIds);
@@ -89,7 +91,7 @@ export class Pipeline<T extends Methods> {
   }
 
   getNewTaskId() {
-    return `task${this.taskIndex++}`;
+    return `task${this.newTaskIndex++}`;
   }
 
   private createDeferedMethods<T extends Methods>(
@@ -124,7 +126,10 @@ export class Pipeline<T extends Methods> {
             return {
               id: taskId,
               result: self.createResultReference(taskId),
-              cancel: () => {},
+              cancel: () => {
+                self.tasks = self.tasks.filter((task) => task.id !== taskId);
+                delete self.state[taskId];
+              },
             };
           };
         },
@@ -183,7 +188,9 @@ export class Pipeline<T extends Methods> {
   }
 
   async run() {
+    this.isRunning = true;
     await this.runReadyTasks(true);
+    this.isRunning = false;
   }
 
   startRunningTasks(taskId: string) {
