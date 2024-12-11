@@ -95,6 +95,17 @@ describe("Pipeline with two sequential methods", () => {
       output: 84,
     });
   });
+
+  it("should successfully run with last task cancelled", async () => {
+    const { pipeline, task1, task2 } = initPipeline();
+
+    task2.cancel();
+    await pipeline.run();
+
+    expect(pipeline.status).toBe(PipelineStatus.Success);
+    expect(pipeline.wait(task1.result)).resolves.toBe(42);
+    expect(pipeline.wait(task2.result)).rejects.toThrow();
+  });
 });
 
 describe("Pipeline with nested methods", () => {
@@ -208,6 +219,13 @@ describe("Pipeline with a method that sleeps", () => {
       output: "slept",
     });
   });
+
+  it("should show running state for the pipeline", async () => {
+    const { pipeline } = initPipeline();
+
+    pipeline.run();
+    expect(pipeline.status).toBe(PipelineStatus.Running);
+  });
 });
 
 describe("Pipeline with a method that sleeps and instant method dependant on it", () => {
@@ -308,5 +326,105 @@ describe("Pipeline with restored tasks and partially completed state", () => {
     await pipeline.run();
     expect(pipeline.status).toBe(PipelineStatus.Success);
     expect(pipeline.wait(task2.result)).resolves.toBe("slept well");
+  });
+});
+
+describe("Pipeline with missing method", () => {
+  const initPipeline = async () => {
+    const initialPipeline = new Pipeline(Methods);
+
+    const task1 = initialPipeline.defer.nested.generateString.v1();
+
+    const pipeline = new Pipeline(
+      {},
+      {
+        state: initialPipeline.state,
+        tasks: [...initialPipeline.tasks],
+      }
+    );
+
+    return { task1, pipeline };
+  };
+
+  it("should fail to run", async () => {
+    const { pipeline, task1 } = await initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.status).toBe(PipelineStatus.Failed);
+    expect(pipeline.wait(task1.result)).rejects.toThrow(
+      "Method nested.generateString.v1 not found"
+    );
+  });
+});
+
+describe("Pipeline with a method which returns an object", () => {
+  const initPipeline = () => {
+    const pipeline = new Pipeline(Methods);
+
+    const task1 = pipeline.defer.generateObject();
+
+    return { task1, pipeline };
+  };
+
+  it("should allow to access nested field", async () => {
+    const { pipeline, task1 } = initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.wait(task1.result.num)).resolves.toBe(42);
+  });
+});
+
+describe("Pipeline with a method which receives an object", () => {
+  it("should allow to pass reference in nested fields", async () => {
+    const pipeline = new Pipeline(Methods);
+
+    const task1 = pipeline.defer.generateNumber();
+    const task2 = pipeline.defer.generateNumber();
+    const task3 = pipeline.defer.sumObjectFields({
+      a: task1.result,
+      b: task2.result,
+    });
+
+    await pipeline.run();
+
+    expect(pipeline.status).toBe(PipelineStatus.Success);
+    expect(pipeline.wait(task3.result)).resolves.toBe(84);
+  });
+});
+
+describe("Pipeline with explicitly defined order", () => {
+  const initPipeline = () => {
+    const onChangeState = jest.fn();
+
+    const pipeline = new Pipeline(Methods, {
+      onChangeState: (change) => onChangeState(change),
+    });
+
+    const task1 = pipeline.defer.generateNumber();
+    const task2 = pipeline.after(task1.id).generateNumber();
+    const task3 = pipeline.defer.generateNumber();
+
+    return { task1, task2, task3, pipeline, onChangeState };
+  };
+
+  it("should call changeStateHandler in the order of execution with respect of defined order", async () => {
+    const { pipeline, onChangeState } = initPipeline();
+
+    await pipeline.run();
+    expect(onChangeState).toHaveBeenNthCalledWith(1, {
+      taskId: "task0",
+      status: "success",
+      output: 42,
+    });
+    expect(onChangeState).toHaveBeenNthCalledWith(2, {
+      taskId: "task2",
+      status: "success",
+      output: 42,
+    });
+    expect(onChangeState).toHaveBeenNthCalledWith(3, {
+      taskId: "task1",
+      status: "success",
+      output: 42,
+    });
   });
 });

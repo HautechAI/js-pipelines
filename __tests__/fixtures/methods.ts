@@ -5,6 +5,12 @@ export const Methods = {
     return 42;
   },
 
+  generateObject: async () => {
+    return {
+      num: 42,
+    };
+  },
+
   multiply: async (a: number, b: number) => {
     return a * b;
   },
@@ -13,9 +19,12 @@ export const Methods = {
     return `${a}${b}`;
   },
 
+  sumObjectFields: async (obj: { a: number; b: number }) => {
+    return obj.a + obj.b;
+  },
+
   methodWithError: async (input: number) => {
     throw new Error("Error in method");
-    return 0;
   },
 
   methodWithSleep: async () => {

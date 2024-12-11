@@ -72,10 +72,7 @@ interface Methods
   extends Record<string, Methods | ((...args: any[]) => Promise<any>)> {}
 
 const path = (obj: any, path: string[]) => {
-  const res = path.reduce((acc, key) => acc[key], obj);
-  if (res === undefined) {
-    throw new Error(`Path ${path.join(".")} not found`);
-  }
+  const res = path.reduce((acc, key) => acc?.[key], obj);
   return res;
 };
 
@@ -92,10 +89,10 @@ export class Pipeline<T extends Methods> {
     }
   ) {
     if (options?.state) {
-      this._state = options?.state;
+      this._state = options.state;
     }
     if (options?.tasks) {
-      options?.tasks.forEach((task) => {
+      options.tasks.forEach((task) => {
         this.addTask(task);
       });
       this.newTaskIndex = this.tasks.length;
@@ -105,13 +102,12 @@ export class Pipeline<T extends Methods> {
   private _tasks: Task[] = [];
   private _tasksById: Record<string, Task> = {};
 
-  
   private _state: PipelineState = {};
-  
+
   private runningTasks: Set<string> = new Set();
-  
+
   private isRunning: boolean = false;
-  
+
   private newTaskIndex: number = 0;
   private getNewTaskId() {
     let newId: string;
@@ -204,22 +200,24 @@ export class Pipeline<T extends Methods> {
     return readyTasks;
   }
 
-  private async runReadyTasks(continueRunning = false) {
+  private async runReadyTasks() {
     const tasks = this.getTasksReadyToRun();
     const promises = tasks.map(async (task) => {
       this.startRunningTasks(task.id);
       try {
-        const result = await path(
-          this.methods,
-          task.method
-        )(...this.replaceRefs(task.args));
+        const method = path(this.methods, task.method);
+        if (!method) {
+          throw new Error(`Method ${task.method.join(".")} not found`);
+        }
+        const result = await method(...this.replaceRefs(task.args));
         this.updateteState(task.id, TaskStatus.Success, result);
       } catch (e) {
         this.updateteState(task.id, TaskStatus.Failed, e);
       } finally {
         this.endRunningTasks(task.id);
       }
-      continueRunning && (await this.runReadyTasks(continueRunning));
+      
+      await this.runReadyTasks();
     });
     await Promise.all(promises);
   }
@@ -323,7 +321,7 @@ export class Pipeline<T extends Methods> {
 
   async run() {
     this.isRunning = true;
-    await this.runReadyTasks(true);
+    await this.runReadyTasks();
     this.isRunning = false;
   }
 
