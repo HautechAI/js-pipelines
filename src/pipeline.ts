@@ -1,3 +1,15 @@
+export enum TaskStatus {
+  Success = "success",
+  Failed = "failed",
+}
+
+export enum PipelineStatus {
+  Pending = "pending",
+  Running = "running",
+  Success = "success",
+  Failed = "failed",
+}
+
 type Task = {
   id: string;
   method: string[];
@@ -48,6 +60,14 @@ type ChangeMethodSignaturesInObject<T> = {
     : ChangeMethodSignaturesInObject<T[Property]>;
 };
 
+type PipelineState = Record<
+  string,
+  {
+    status: TaskStatus;
+    output: any;
+  }
+>;
+
 interface Methods
   extends Record<string, Methods | ((...args: any[]) => Promise<any>)> {}
 
@@ -60,38 +80,50 @@ const path = (obj: any, path: string[]) => {
 };
 
 export class Pipeline<T extends Methods> {
-  constructor(private methods: T) {}
-
-  tasks: Task[] = [];
-  newTaskIndex: number = 0;
-
-  state: Record<
-    string,
-    {
-      status: "failed" | "success";
-      output: any;
+  constructor(
+    private methods: T,
+    private options?: {
+      onChangeState?: (
+        update: { taskId: string; status: TaskStatus; output: any },
+        state: PipelineState
+      ) => void;
+      state?: PipelineState;
+      tasks?: Task[];
     }
-  > = {};
-
-  runningTasks: Set<string> = new Set();
-
-  isRunning: boolean = false;
-
-  after(...taskIds: string[]) {
-    return this.createDeferedMethods(this.methods, taskIds);
+  ) {
+    if (options?.state) {
+      this._state = options?.state;
+    }
+    if (options?.tasks) {
+      options?.tasks.forEach((task) => {
+        this.addTask(task);
+      });
+      this.newTaskIndex = this.tasks.length;
+    }
   }
 
-  get defer() {
-    return this.createDeferedMethods(this.methods);
+  private _tasks: Task[] = [];
+  private _tasksById: Record<string, Task> = {};
+
+  
+  private _state: PipelineState = {};
+  
+  private runningTasks: Set<string> = new Set();
+  
+  private isRunning: boolean = false;
+  
+  private newTaskIndex: number = 0;
+  private getNewTaskId() {
+    let newId: string;
+    do {
+      newId = `task${this.newTaskIndex++}`;
+    } while (this._tasksById[newId] !== undefined);
+    return newId;
   }
 
-  async wait<T>(value: T) {
-    const serializedValue = JSON.parse(JSON.stringify(value));
-    return this.replaceRefs(serializedValue);
-  }
-
-  getNewTaskId() {
-    return `task${this.newTaskIndex++}`;
+  private addTask(task: Task) {
+    this._tasks.push(task);
+    this._tasksById[task.id] = task;
   }
 
   private createDeferedMethods<T extends Methods>(
@@ -117,27 +149,32 @@ export class Pipeline<T extends Methods> {
           return (...args: any[]) => {
             const serializedArgs = JSON.parse(JSON.stringify(args));
             const taskId = self.getNewTaskId();
-            self.tasks.push({
+            self.addTask({
               id: taskId,
               method: [...path, prop.toString()],
               args: serializedArgs,
               dependencies: [...self.findRefs(serializedArgs), ...after],
             });
-            return {
-              id: taskId,
-              result: self.createResultReference(taskId),
-              cancel: () => {
-                self.tasks = self.tasks.filter((task) => task.id !== taskId);
-                delete self.state[taskId];
-              },
-            };
+            return self.createTaskObject(taskId) as any;
           };
         },
       }
     );
   }
 
-  createResultReference(taskId: string, path: string[] = []) {
+  private createTaskObject(taskId: string) {
+    const self = this;
+    return {
+      id: taskId,
+      result: self.createResultReference(taskId),
+      cancel: () => {
+        self._tasks = self._tasks.filter((task) => task.id !== taskId);
+        delete self._state[taskId];
+      },
+    };
+  }
+
+  private createResultReference(taskId: string, path: string[] = []) {
     const self = this;
 
     const obj = { $ref: taskId, path };
@@ -151,13 +188,13 @@ export class Pipeline<T extends Methods> {
     }) as any;
   }
 
-  getTasksReadyToRun() {
+  private getTasksReadyToRun() {
     const readyTasks: Task[] = [];
-    for (const task of this.tasks) {
+    for (const task of this._tasks) {
       if (
-        this.state[task.id]?.status === undefined &&
+        this._state[task.id]?.status === undefined &&
         task.dependencies.every(
-          (dep) => this.state[dep]?.status === "success"
+          (dep) => this._state[dep]?.status === TaskStatus.Success
         ) &&
         !this.runningTasks.has(task.id)
       ) {
@@ -167,7 +204,7 @@ export class Pipeline<T extends Methods> {
     return readyTasks;
   }
 
-  async runReadyTasks(continueRunning = false) {
+  private async runReadyTasks(continueRunning = false) {
     const tasks = this.getTasksReadyToRun();
     const promises = tasks.map(async (task) => {
       this.startRunningTasks(task.id);
@@ -176,9 +213,9 @@ export class Pipeline<T extends Methods> {
           this.methods,
           task.method
         )(...this.replaceRefs(task.args));
-        this.updateteState(task.id, "success", result);
+        this.updateteState(task.id, TaskStatus.Success, result);
       } catch (e) {
-        this.updateteState(task.id, "failed", e);
+        this.updateteState(task.id, TaskStatus.Failed, e);
       } finally {
         this.endRunningTasks(task.id);
       }
@@ -187,25 +224,20 @@ export class Pipeline<T extends Methods> {
     await Promise.all(promises);
   }
 
-  async run() {
-    this.isRunning = true;
-    await this.runReadyTasks(true);
-    this.isRunning = false;
-  }
-
-  startRunningTasks(taskId: string) {
-    console.log(`Starting task ${taskId}`);
+  private startRunningTasks(taskId: string) {
+    // console.log(`Starting task ${taskId}`);
     this.runningTasks.add(taskId);
   }
 
-  endRunningTasks(taskId: string) {
-    console.log(`Ending task ${taskId}`);
+  private endRunningTasks(taskId: string) {
+    // console.log(`Ending task ${taskId}`);
     this.runningTasks.delete(taskId);
   }
 
-  updateteState(taskId: string, status: "success" | "failed", output: any) {
-    console.log(`Updating task ${taskId} with status ${status}`);
-    this.state[taskId] = { status, output };
+  private updateteState(taskId: string, status: TaskStatus, output: any) {
+    // console.log(`Updating task ${taskId} with status ${status}`);
+    this._state[taskId] = { status, output };
+    this.options?.onChangeState?.({ taskId, status, output }, this._state);
   }
 
   private findRefs(obj: any) {
@@ -234,12 +266,19 @@ export class Pipeline<T extends Methods> {
     if (typeof obj === "object") {
       // if obj has $ref property, replace it with the actual value
       if (obj.$ref !== undefined) {
-        const task = this.state[obj.$ref];
+        const task = this._state[obj.$ref];
         if (task === undefined) {
           throw new Error(`Task ${obj.$ref} is not ready`);
-        } else if (task.status === "failed") {
+        } else if (task.status === TaskStatus.Failed) {
           throw task.output;
-        } else return path(task.output, obj.path);
+        } else {
+          // return output value at path
+          if (obj.path.length === 0) {
+            return task.output;
+          } else {
+            return path(task.output, obj.path);
+          }
+        }
       } else {
         // otherwise, replace refs in all the object values
         return Object.fromEntries(
@@ -248,5 +287,58 @@ export class Pipeline<T extends Methods> {
       }
     }
     return obj;
+  }
+
+  // public methods
+
+  after(...taskIds: string[]) {
+    return this.createDeferedMethods(this.methods, taskIds);
+  }
+
+  get defer() {
+    return this.createDeferedMethods(this.methods);
+  }
+
+  async wait<T>(value: T) {
+    const serializedValue = JSON.parse(JSON.stringify(value));
+    return this.replaceRefs(serializedValue);
+  }
+
+  get status(): PipelineStatus {
+    if (this.isRunning) return PipelineStatus.Running;
+
+    let hasUnprocessedTasks = false;
+    for (const task of this._tasks) {
+      if (this._state[task.id]?.status === undefined) {
+        hasUnprocessedTasks = true;
+      }
+      if (this._state[task.id]?.status === TaskStatus.Failed) {
+        return PipelineStatus.Failed;
+      }
+    }
+    if (hasUnprocessedTasks) return PipelineStatus.Pending;
+
+    return PipelineStatus.Success;
+  }
+
+  async run() {
+    this.isRunning = true;
+    await this.runReadyTasks(true);
+    this.isRunning = false;
+  }
+
+  get state() {
+    return this._state as Readonly<PipelineState>;
+  }
+
+  get tasks() {
+    return this._tasks as Readonly<Task[]>;
+  }
+
+  task(taskId: string) {
+    if (this._tasks.find((task) => task.id === taskId))
+      return this.createTaskObject(taskId);
+
+    throw new Error(`Task ${taskId} not found`);
   }
 }

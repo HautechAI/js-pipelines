@@ -1,0 +1,34 @@
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export const Methods = {
+  generateNumber: async () => {
+    return 42;
+  },
+
+  multiply: async (a: number, b: number) => {
+    return a * b;
+  },
+
+  concat: async (a: string, b: string) => {
+    return `${a}${b}`;
+  },
+
+  methodWithError: async (input: number) => {
+    throw new Error("Error in method");
+    return 0;
+  },
+
+  methodWithSleep: async () => {
+    await sleep(0);
+    return "slept";
+  },
+
+  // nested methods
+  nested: {
+    generateString: {
+      v1: async () => {
+        return "test-string";
+      },
+    },
+  },
+};
