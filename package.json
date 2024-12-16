@@ -1,4 +1,16 @@
 {
+  "name": "@hautechai/js-pipelines",
+  "version": "1.0.1",
+  "description": "Framework to build and run pipelines in JavaScript",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rimraf dist && tsc",
+    "test": "jest"
+  },
   "dependencies": {
     "ts-node": "^10.9.2",
     "tsx": "^4.19.2",
@@ -9,6 +21,7 @@
     "@types/jest": "^29.5.14",
     "@types/node": "^22.9.0",
     "jest": "^29.7.0",
+    "rimraf": "^6.0.1",
     "ts-jest": "^29.2.5"
   }
 }

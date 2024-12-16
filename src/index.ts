@@ -1,1 +1,1 @@
-export { Pipeline, PipelineStatus } from "./pipeline";
+export { Pipeline, PipelineStatus, TaskStatus } from "./pipeline";
