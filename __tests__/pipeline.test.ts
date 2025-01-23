@@ -1,10 +1,10 @@
-import { Pipeline, PipelineStatus } from "../src";
+import { Pipeline, PipelineStatus, TaskStatus } from "../src";
 import { Methods } from "./fixtures/methods";
 
 describe("Empty pipeline", () => {
   it("should have success status without run", async () => {
     const pipeline = new Pipeline(Methods);
-    expect(pipeline.status).toBe(PipelineStatus.Success);
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
   });
 });
 
@@ -30,15 +30,15 @@ describe("Pipeline with a single method", () => {
 
   it("should have pending status before running", async () => {
     const { pipeline } = initPipeline();
-    expect(pipeline.status).toBe(PipelineStatus.Pending);
+    expect(pipeline.status).toBe(PipelineStatus.PENDING);
   });
 
   it("should successfully execute", async () => {
     const { pipeline, task1 } = initPipeline();
 
     await pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task1.result)).resolves.toBe(42);
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task1.result)).resolves.toBe(42);
   });
 
   it("should allow to get task by id", async () => {
@@ -76,8 +76,8 @@ describe("Pipeline with two sequential methods", () => {
     const { pipeline, task2 } = initPipeline();
 
     await pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task2.result)).resolves.toBe(84);
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task2.result)).resolves.toBe(84);
   });
 
   it("should call changeStateHandler in the order of tasks", async () => {
@@ -86,12 +86,12 @@ describe("Pipeline with two sequential methods", () => {
     await pipeline.run();
     expect(onChangeState).toHaveBeenNthCalledWith(1, {
       taskId: "task0",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: 42,
     });
     expect(onChangeState).toHaveBeenNthCalledWith(2, {
       taskId: "task1",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: 84,
     });
   });
@@ -102,9 +102,9 @@ describe("Pipeline with two sequential methods", () => {
     task2.cancel();
     await pipeline.run();
 
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task1.result)).resolves.toBe(42);
-    expect(pipeline.wait(task2.result)).rejects.toThrow();
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task1.result)).resolves.toBe(42);
+    expect(pipeline.unwrap(task2.result)).rejects.toThrow();
   });
 });
 
@@ -131,8 +131,9 @@ describe("Pipeline with nested methods", () => {
     const { pipeline, task1 } = initPipeline();
 
     await pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task1.result)).resolves.toBe("test-string");
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task1.result)).resolves.toBe("test-string");
+    await expect(task1.unwrap()).resolves.toBe("test-string");
   });
 });
 
@@ -151,9 +152,10 @@ describe("Pipeline with a method that throws an error", () => {
     const { pipeline, task3 } = initPipeline();
 
     await pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Failed);
+    expect(pipeline.status).toBe(PipelineStatus.FAILED);
     expect(pipeline.state.task1.status).toBe("failed");
-    expect(pipeline.wait(task3.result)).rejects.toThrow();
+    expect(pipeline.unwrap(task3.result)).rejects.toThrow();
+    await expect(task3.unwrap()).rejects.toThrow();
   });
 });
 
@@ -178,12 +180,12 @@ describe("Pipeline with two instant methods", () => {
 
     expect(onChangeState).toHaveBeenNthCalledWith(1, {
       taskId: "task0",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: 2,
     });
     expect(onChangeState).toHaveBeenNthCalledWith(2, {
       taskId: "task1",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: 42,
     });
   });
@@ -210,12 +212,12 @@ describe("Pipeline with a method that sleeps", () => {
 
     expect(onChangeState).toHaveBeenNthCalledWith(1, {
       taskId: "task1",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: 42,
     });
     expect(onChangeState).toHaveBeenNthCalledWith(2, {
       taskId: "task0",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: "slept",
     });
   });
@@ -224,7 +226,7 @@ describe("Pipeline with a method that sleeps", () => {
     const { pipeline } = initPipeline();
 
     pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Running);
+    expect(pipeline.status).toBe(PipelineStatus.IN_PROGRESS);
   });
 });
 
@@ -242,8 +244,8 @@ describe("Pipeline with a method that sleeps and instant method dependant on it"
     const { pipeline, task2 } = initPipeline();
 
     await pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task2.result)).resolves.toBe("slept well");
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task2.result)).resolves.toBe("slept well");
   });
 });
 
@@ -265,8 +267,8 @@ describe("Pipeline with restored tasks and empty state", () => {
     const { pipeline, task2 } = initPipeline();
 
     await pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task2.result)).resolves.toBe("slept well");
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task2.result)).resolves.toBe("slept well");
   });
 });
 
@@ -290,8 +292,8 @@ describe("Pipeline with restored tasks and state", () => {
   it("should be immediately successful", async () => {
     const { pipeline, task2 } = await initPipeline();
 
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task2.result)).resolves.toBe("slept well");
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task2.result)).resolves.toBe("slept well");
   });
 });
 
@@ -316,16 +318,16 @@ describe("Pipeline with restored tasks and partially completed state", () => {
   it("should have pending status", async () => {
     const { pipeline, task2 } = await initPipeline();
 
-    expect(pipeline.status).toBe(PipelineStatus.Pending);
-    expect(pipeline.wait(task2.result)).rejects.toThrow();
+    expect(pipeline.status).toBe(PipelineStatus.PENDING);
+    expect(pipeline.unwrap(task2.result)).rejects.toThrow();
   });
 
   it("should successfully continue execution", async () => {
     const { pipeline, task2 } = await initPipeline();
 
     await pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task2.result)).resolves.toBe("slept well");
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task2.result)).resolves.toBe("slept well");
   });
 });
 
@@ -350,8 +352,8 @@ describe("Pipeline with missing method", () => {
     const { pipeline, task1 } = await initPipeline();
 
     await pipeline.run();
-    expect(pipeline.status).toBe(PipelineStatus.Failed);
-    expect(pipeline.wait(task1.result)).rejects.toThrow(
+    expect(pipeline.status).toBe(PipelineStatus.FAILED);
+    expect(pipeline.unwrap(task1.result)).rejects.toThrow(
       "Method nested.generateString.v1 not found"
     );
   });
@@ -370,7 +372,8 @@ describe("Pipeline with a method which returns an object", () => {
     const { pipeline, task1 } = initPipeline();
 
     await pipeline.run();
-    expect(pipeline.wait(task1.result.num)).resolves.toBe(42);
+    expect(pipeline.unwrap(task1.result.num)).resolves.toBe(42);
+    expect((await task1.unwrap()).num).toBe(42);
   });
 });
 
@@ -387,8 +390,8 @@ describe("Pipeline with a method which receives an object", () => {
 
     await pipeline.run();
 
-    expect(pipeline.status).toBe(PipelineStatus.Success);
-    expect(pipeline.wait(task3.result)).resolves.toBe(84);
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(pipeline.unwrap(task3.result)).resolves.toBe(84);
   });
 });
 
@@ -413,18 +416,42 @@ describe("Pipeline with explicitly defined order", () => {
     await pipeline.run();
     expect(onChangeState).toHaveBeenNthCalledWith(1, {
       taskId: "task0",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: 42,
     });
     expect(onChangeState).toHaveBeenNthCalledWith(2, {
       taskId: "task2",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: 42,
     });
     expect(onChangeState).toHaveBeenNthCalledWith(3, {
       taskId: "task1",
-      status: "success",
+      status: TaskStatus.COMPLETED,
       output: 42,
+    });
+  });
+
+  describe("Pipeline with serialize error handler", () => {
+    const initPipeline = () => {
+      const pipeline = new Pipeline(Methods, {
+        serializeError: (e) => `Serialized error: ${e.message}`,
+      });
+
+      const task1 = pipeline.defer.generateNumber();
+      const task2 = pipeline.defer.methodWithError(task1.result);
+
+      return { task1, task2, pipeline };
+    };
+
+    it("should fail with an error", async () => {
+      const { pipeline, task2 } = initPipeline();
+
+      await pipeline.run();
+      expect(pipeline.status).toBe(PipelineStatus.FAILED);
+      expect(pipeline.state.task1.status).toBe("failed");
+      await expect(task2.unwrap()).rejects.toBe(
+        "Serialized error: Error in method"
+      );
     });
   });
 });

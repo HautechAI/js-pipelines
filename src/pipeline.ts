@@ -1,13 +1,13 @@
 export enum TaskStatus {
-  Success = "success",
-  Failed = "failed",
+  COMPLETED = "completed",
+  FAILED = "failed",
 }
 
 export enum PipelineStatus {
-  Pending = "pending",
-  Running = "running",
-  Success = "success",
-  Failed = "failed",
+  PENDING = "pending",
+  IN_PROGRESS = "in_progress",
+  COMPLETED = "completed",
+  FAILED = "failed",
 }
 
 type Task = {
@@ -20,38 +20,50 @@ type Task = {
 type TaskOutput<T> = {
   id: string;
   result: T;
+  unwrap: () => Promise<UnwrapRef<T>>;
   cancel: () => void;
 };
 
 interface RefPrimitive<T extends string | number | boolean> {
   __kind__: T;
 }
-type Ref<T> = //
+type WrapRef<T> = //
   // if T is a primitive, return a RefPrimitive
   T extends string | number | boolean
     ? RefPrimitive<T>
     : // if T is an array, return an array of Ref<T>
     T extends Array<infer U>
-    ? Array<Ref<U>>
+    ? Array<WrapRef<U>>
     : // if T is an object, return an object with Ref<T> values
     T extends Record<any, any>
-    ? { [Property in keyof T]: Ref<T[Property]> }
+    ? { [Property in keyof T]: WrapRef<T[Property]> }
     : never;
 
-type RefOrValue<T> = //
+type WrapRefOrValue<T> = //
   // if T is a primitive, return a RefPrimitive
   T extends string | number | boolean
     ? RefPrimitive<T> | T
     : // if T is an array, return an array of Ref<T>
     T extends Array<infer U>
-    ? Array<RefOrValue<U>>
+    ? Array<WrapRefOrValue<U>>
     : // if T is an object, return an object with Ref<T> values
     T extends Record<any, any>
-    ? { [Property in keyof T]: RefOrValue<T[Property]> }
+    ? { [Property in keyof T]: WrapRefOrValue<T[Property]> }
+    : never;
+
+type UnwrapRef<T> = //
+  T extends string | number | boolean
+    ? T
+    : T extends RefPrimitive<infer U>
+    ? U
+    : T extends Array<infer U>
+    ? Array<UnwrapRef<U>>
+    : T extends Record<any, any>
+    ? { [Property in keyof T]: UnwrapRef<T[Property]> }
     : never;
 
 type ChangeMethodSignature<T> = T extends (...args: any[]) => Promise<infer U>
-  ? (...args: RefOrValue<Parameters<T>>) => TaskOutput<Ref<U>>
+  ? (...args: WrapRefOrValue<Parameters<T>>) => TaskOutput<WrapRef<U>>
   : never;
 
 type ChangeMethodSignaturesInObject<T> = {
@@ -84,6 +96,7 @@ export class Pipeline<T extends Methods> {
         update: { taskId: string; status: TaskStatus; output: any },
         state: PipelineState
       ) => void;
+      serializeError?: (error: Error) => any;
       state?: PipelineState;
       tasks?: Task[];
     }
@@ -143,7 +156,7 @@ export class Pipeline<T extends Methods> {
 
           // if prop is a function, return a proxy function
           return (...args: any[]) => {
-            const serializedArgs = JSON.parse(JSON.stringify(args));
+            const serializedArgs = self.toPlain(args);
             const taskId = self.getNewTaskId();
             self.addTask({
               id: taskId,
@@ -163,6 +176,9 @@ export class Pipeline<T extends Methods> {
     return {
       id: taskId,
       result: self.createResultReference(taskId),
+      unwrap: async () => {
+        return await self.unwrap(self.createResultReference(taskId));
+      },
       cancel: () => {
         self._tasks = self._tasks.filter((task) => task.id !== taskId);
         delete self._state[taskId];
@@ -190,7 +206,7 @@ export class Pipeline<T extends Methods> {
       if (
         this._state[task.id]?.status === undefined &&
         task.dependencies.every(
-          (dep) => this._state[dep]?.status === TaskStatus.Success
+          (dep) => this._state[dep]?.status === TaskStatus.COMPLETED
         ) &&
         !this.runningTasks.has(task.id)
       ) {
@@ -210,13 +226,17 @@ export class Pipeline<T extends Methods> {
           throw new Error(`Method ${task.method.join(".")} not found`);
         }
         const result = await method(...this.replaceRefs(task.args));
-        this.updateteState(task.id, TaskStatus.Success, result);
+        this.updateteState(task.id, TaskStatus.COMPLETED, result);
       } catch (e) {
-        this.updateteState(task.id, TaskStatus.Failed, e);
+        this.updateteState(
+          task.id,
+          TaskStatus.FAILED,
+          this.options?.serializeError ? this.options?.serializeError(e) : e
+        );
       } finally {
         this.endRunningTasks(task.id);
       }
-      
+
       await this.runReadyTasks();
     });
     await Promise.all(promises);
@@ -267,7 +287,7 @@ export class Pipeline<T extends Methods> {
         const task = this._state[obj.$ref];
         if (task === undefined) {
           throw new Error(`Task ${obj.$ref} is not ready`);
-        } else if (task.status === TaskStatus.Failed) {
+        } else if (task.status === TaskStatus.FAILED) {
           throw task.output;
         } else {
           // return output value at path
@@ -287,6 +307,11 @@ export class Pipeline<T extends Methods> {
     return obj;
   }
 
+  // replace proxy objects with plain objects
+  private toPlain(v: any) {
+    return JSON.parse(JSON.stringify(v));
+  }
+
   // public methods
 
   after(...taskIds: string[]) {
@@ -297,26 +322,26 @@ export class Pipeline<T extends Methods> {
     return this.createDeferedMethods(this.methods);
   }
 
-  async wait<T>(value: T) {
-    const serializedValue = JSON.parse(JSON.stringify(value));
-    return this.replaceRefs(serializedValue);
+  async unwrap<T>(value: T) {
+    const serializedValue = this.toPlain(value);
+    return this.replaceRefs(serializedValue) as UnwrapRef<T>;
   }
 
   get status(): PipelineStatus {
-    if (this.isRunning) return PipelineStatus.Running;
+    if (this.isRunning) return PipelineStatus.IN_PROGRESS;
 
     let hasUnprocessedTasks = false;
     for (const task of this._tasks) {
       if (this._state[task.id]?.status === undefined) {
         hasUnprocessedTasks = true;
       }
-      if (this._state[task.id]?.status === TaskStatus.Failed) {
-        return PipelineStatus.Failed;
+      if (this._state[task.id]?.status === TaskStatus.FAILED) {
+        return PipelineStatus.FAILED;
       }
     }
-    if (hasUnprocessedTasks) return PipelineStatus.Pending;
+    if (hasUnprocessedTasks) return PipelineStatus.PENDING;
 
-    return PipelineStatus.Success;
+    return PipelineStatus.COMPLETED;
   }
 
   async run() {
