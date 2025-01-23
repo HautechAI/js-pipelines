@@ -358,6 +358,10 @@ export class Pipeline<T extends Methods> {
     return this._tasks as Readonly<Task[]>;
   }
 
+  loadState(state: PipelineState) {
+    this._state = state;
+  }
+
   task(taskId: string) {
     if (this._tasks.find((task) => task.id === taskId))
       return this.createTaskObject(taskId);

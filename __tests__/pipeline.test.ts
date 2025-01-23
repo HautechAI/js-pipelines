@@ -454,4 +454,27 @@ describe("Pipeline with explicitly defined order", () => {
       );
     });
   });
+
+  describe("Load state", () => {
+    const createPipeline = () => {
+      const pipeline = new Pipeline(Methods);
+
+      const task1 = pipeline.defer.generateNumber();
+      const task2 = pipeline.defer.methodWithError(task1.result);
+
+      return { task1, task2, pipeline };
+    };
+
+    it("should load state", async () => {
+      const { pipeline } = createPipeline();
+      await pipeline.run();
+      const state = pipeline.state;
+
+      const { pipeline: newPipeline, task1 } = createPipeline();
+      newPipeline.loadState(state);
+
+      expect(newPipeline.status).toBe(PipelineStatus.FAILED);
+      expect(task1.unwrap()).resolves.toBe(42);
+    });
+  });
 });
