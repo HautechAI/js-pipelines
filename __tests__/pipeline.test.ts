@@ -219,6 +219,27 @@ describe("Pipeline with a method that throws an error", () => {
       expect.arrayContaining([expect.objectContaining({ id: task3.id })])
     );
   });
+
+  it("should return failed task status", async () => {
+    const { pipeline, task2 } = initPipeline();
+
+    await pipeline.run();
+    expect(task2.status()).toEqual(TaskStatus.FAILED);
+  });
+
+  it("should return completed task status", async () => {
+    const { pipeline, task1 } = initPipeline();
+
+    await pipeline.run();
+    expect(task1.status()).toEqual(TaskStatus.COMPLETED);
+  });
+
+  it("should return pending task status", async () => {
+    const { pipeline, task3 } = initPipeline();
+
+    await pipeline.run();
+    expect(task3.status()).toEqual(TaskStatus.PENDING);
+  });
 });
 
 describe("Pipeline with two instant methods", () => {

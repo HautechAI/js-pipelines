@@ -1,12 +1,16 @@
 {
-  "name": "@hautechai/js-pipelines",
-  "version": "1.0.1",
+  "name": "@hautechai/pipelines",
+  "version": "0.1.0",
   "description": "Framework to build and run pipelines in JavaScript",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "files": [
     "dist"
   ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/HautechAI/js-pipelines.git"
+  },
   "scripts": {
     "build": "rimraf dist && tsc",
     "test": "jest"

@@ -1,4 +1,5 @@
 export enum TaskStatus {
+  PENDING = "pending",
   COMPLETED = "completed",
   FAILED = "failed",
 }
@@ -20,6 +21,7 @@ type Task = {
 type TaskOutput<T> = {
   id: string;
   result: T;
+  status: () => TaskStatus;
   unwrap: () => Promise<UnwrapRef<T>>;
   cancel: () => void;
 };
@@ -176,6 +178,9 @@ export class Pipeline<T extends Methods> {
     return {
       id: taskId,
       result: self.createResultReference(taskId),
+      status: () => {
+        return self._state[taskId]?.status ?? TaskStatus.PENDING;
+      },
       unwrap: async () => {
         return await self.unwrap(self.createResultReference(taskId));
       },
