@@ -50,6 +50,22 @@ describe("Pipeline with a single method", () => {
     const { pipeline, task1 } = initPipeline();
     expect(() => pipeline.task("test")).toThrow();
   });
+
+  it("should allow to get failed tasks", async () => {
+    const { pipeline, task1 } = initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.failedTasks()).toEqual([]);
+  });
+
+  it("should allow to get completed tasks", async () => {
+    const { pipeline, task1 } = initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.completedTasks()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: task1.id })])
+    );
+  });
 });
 
 describe("Pipeline with two sequential methods", () => {
@@ -106,6 +122,25 @@ describe("Pipeline with two sequential methods", () => {
     expect(pipeline.unwrap(task1.result)).resolves.toBe(42);
     expect(pipeline.unwrap(task2.result)).rejects.toThrow();
   });
+
+  it("should allow to get failed tasks", async () => {
+    const { pipeline } = initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.failedTasks()).toEqual([]);
+  });
+
+  it("should allow to get completed tasks", async () => {
+    const { pipeline, task1, task2 } = initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.completedTasks()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: task1.id }),
+        expect.objectContaining({ id: task2.id }),
+      ])
+    );
+  });
 });
 
 describe("Pipeline with nested methods", () => {
@@ -156,6 +191,33 @@ describe("Pipeline with a method that throws an error", () => {
     expect(pipeline.state.task1.status).toBe("failed");
     expect(pipeline.unwrap(task3.result)).rejects.toThrow();
     await expect(task3.unwrap()).rejects.toThrow();
+  });
+
+  it("should allow to get failed tasks", async () => {
+    const { pipeline, task2, task3 } = initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.failedTasks()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: task2.id })])
+    );
+  });
+
+  it("should allow to get completed tasks", async () => {
+    const { pipeline, task1 } = initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.completedTasks()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: task1.id })])
+    );
+  });
+
+  it("should allow to get pending tasks", async () => {
+    const { pipeline, task3 } = initPipeline();
+
+    await pipeline.run();
+    expect(pipeline.pendingTasks()).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: task3.id })])
+    );
   });
 });
 

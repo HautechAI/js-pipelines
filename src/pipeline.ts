@@ -243,17 +243,14 @@ export class Pipeline<T extends Methods> {
   }
 
   private startRunningTasks(taskId: string) {
-    // console.log(`Starting task ${taskId}`);
     this.runningTasks.add(taskId);
   }
 
   private endRunningTasks(taskId: string) {
-    // console.log(`Ending task ${taskId}`);
     this.runningTasks.delete(taskId);
   }
 
   private updateteState(taskId: string, status: TaskStatus, output: any) {
-    // console.log(`Updating task ${taskId} with status ${status}`);
     this._state[taskId] = { status, output };
     this.options?.onChangeState?.({ taskId, status, output }, this._state);
   }
@@ -367,5 +364,23 @@ export class Pipeline<T extends Methods> {
       return this.createTaskObject(taskId);
 
     throw new Error(`Task ${taskId} not found`);
+  }
+
+  failedTasks() {
+    return this._tasks
+      .filter((task) => this._state[task.id]?.status === TaskStatus.FAILED)
+      .map((task) => this.createTaskObject(task.id));
+  }
+
+  completedTasks() {
+    return this._tasks
+      .filter((task) => this._state[task.id]?.status === TaskStatus.COMPLETED)
+      .map((task) => this.createTaskObject(task.id));
+  }
+
+  pendingTasks() {
+    return this._tasks
+      .filter((task) => this._state[task.id] === undefined)
+      .map((task) => this.createTaskObject(task.id));
   }
 }
