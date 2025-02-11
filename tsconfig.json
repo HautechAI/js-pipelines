@@ -3,7 +3,8 @@
         "esModuleInterop": true,
         "outDir": "./dist",
         "declaration": true,
-        "target": "es2022"
+        "target": "es2022",
+        "moduleResolution": "node"
     },
     "include": [
         "./src/**/*.ts"
