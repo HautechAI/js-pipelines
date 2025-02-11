@@ -97,7 +97,8 @@ export class Pipeline<T extends Methods> {
       onChangeState?: (
         update: { taskId: string; status: TaskStatus; output: any },
         state: PipelineState
-      ) => void;
+      ) => Promise<void>;
+      onCompleted?: (state: PipelineState) => Promise<void>;
       serializeError?: (error: Error) => any;
       state?: PipelineState;
       tasks?: Task[];
@@ -231,9 +232,9 @@ export class Pipeline<T extends Methods> {
           throw new Error(`Method ${task.method.join(".")} not found`);
         }
         const result = await method(...this.replaceRefs(task.args));
-        this.updateteState(task.id, TaskStatus.COMPLETED, result);
+        await this.updateState(task.id, TaskStatus.COMPLETED, result);
       } catch (e) {
-        this.updateteState(
+        await this.updateState(
           task.id,
           TaskStatus.FAILED,
           this.options?.serializeError ? this.options?.serializeError(e) : e
@@ -255,9 +256,9 @@ export class Pipeline<T extends Methods> {
     this.runningTasks.delete(taskId);
   }
 
-  private updateteState(taskId: string, status: TaskStatus, output: any) {
+  private async updateState(taskId: string, status: TaskStatus, output: any) {
     this._state[taskId] = { status, output };
-    this.options?.onChangeState?.({ taskId, status, output }, this._state);
+    await this.options?.onChangeState?.({ taskId, status, output }, this._state);
   }
 
   private findRefs(obj: any) {
@@ -349,6 +350,7 @@ export class Pipeline<T extends Methods> {
   async run() {
     this.isRunning = true;
     await this.runReadyTasks();
+    await this.options?.onCompleted?.(this._state);
     this.isRunning = false;
   }
 

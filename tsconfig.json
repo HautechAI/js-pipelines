@@ -2,7 +2,8 @@
     "compilerOptions": {
         "esModuleInterop": true,
         "outDir": "./dist",
-        "declaration": true
+        "declaration": true,
+        "target": "es2022"
     },
     "include": [
         "./src/**/*.ts"

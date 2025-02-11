@@ -6,6 +6,15 @@ describe("Empty pipeline", () => {
     const pipeline = new Pipeline(Methods);
     expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
   });
+
+  it('should call onCompleted', async () => {
+    const onCompleted = jest.fn();
+    const pipeline = new Pipeline(Methods, {
+      onCompleted: (state) => onCompleted(state),
+    });
+    await pipeline.run();
+    expect(onCompleted).toHaveBeenCalled();
+  });
 });
 
 describe("Pipeline with a single method", () => {
