@@ -350,8 +350,8 @@ export class Pipeline<T extends Methods> {
   async run() {
     this.isRunning = true;
     await this.runReadyTasks();
-    await this.options?.onCompleted?.(this._state);
     this.isRunning = false;
+    await this.options?.onCompleted?.(this._state);
   }
 
   get state() {
