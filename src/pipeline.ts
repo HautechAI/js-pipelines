@@ -18,7 +18,7 @@ type Task = {
   dependencies: string[];
 };
 
-type TaskOutput<T> = {
+export type TaskOutput<T> = {
   id: string;
   result: T;
   status: () => TaskStatus;
