@@ -24,6 +24,7 @@ type TaskOutput<T> = {
   status: () => TaskStatus;
   unwrap: () => Promise<UnwrapRef<T>>;
   cancel: () => void;
+  __taskOutput__: true;
 };
 
 interface RefPrimitive<T extends string | number | boolean> {
@@ -174,7 +175,7 @@ export class Pipeline<T extends Methods> {
     );
   }
 
-  private createTaskObject(taskId: string) {
+  private createTaskObject(taskId: string): TaskOutput<any> {
     const self = this;
     return {
       id: taskId,
@@ -189,6 +190,7 @@ export class Pipeline<T extends Methods> {
         self._tasks = self._tasks.filter((task) => task.id !== taskId);
         delete self._state[taskId];
       },
+      __taskOutput__: true,
     };
   }
 
