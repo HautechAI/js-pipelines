@@ -83,7 +83,7 @@ type PipelineState = Record<
   }
 >;
 
-interface Methods
+export interface Methods
   extends Record<string, Methods | ((...args: any[]) => Promise<any>)> {}
 
 const path = (obj: any, path: string[]) => {
