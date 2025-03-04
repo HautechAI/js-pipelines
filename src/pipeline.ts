@@ -65,8 +65,8 @@ type UnwrapRef<T> = //
     ? { [Property in keyof T]: UnwrapRef<T[Property]> }
     : never;
 
-type ChangeMethodSignature<T> = T extends (...args: any[]) => Promise<infer U>
-  ? (...args: WrapRefOrValue<Parameters<T>>) => TaskOutput<WrapRef<U>>
+type ChangeMethodSignature<T> = T extends (...args: infer P) => Promise<infer U>
+  ? (...args: { [K in keyof P]: WrapRefOrValue<P[K]> } ) => TaskOutput<WrapRef<U>>
   : never;
 
 type ChangeMethodSignaturesInObject<T> = {
@@ -323,7 +323,7 @@ export class Pipeline<T extends Methods> {
     return this.createDeferedMethods(this.methods, taskIds);
   }
 
-  get defer() {
+  get defer(): ChangeMethodSignaturesInObject<T> {
     return this.createDeferedMethods(this.methods);
   }
 
