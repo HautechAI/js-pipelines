@@ -378,8 +378,11 @@ export class Pipeline<T extends Methods, O> {
     return this._tasks as Readonly<Task[]>;
   }
 
-  loadState(state: PipelineState) {
+  loadState(state: PipelineState, output?: WrapRefOrValue<O>) {
     this._state = state;
+    if (output !== undefined) {
+      this.output = output;
+    }
   }
 
   task(taskId: string) {
