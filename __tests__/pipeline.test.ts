@@ -598,4 +598,28 @@ describe("Pipeline with an output", () => {
 
     expect(pipeline.output).toEqual({ "message": "84 is the answer", generated: 42, "note": "This is an object" });
   });
+
+
+  describe("Load state", () => {
+    const createPipeline = () => {
+      const pipeline = new Pipeline(Methods);
+
+      const task1 = pipeline.defer.generateNumber();
+      pipeline.output = task1.result
+      return { task1, pipeline };
+    };
+
+    it("should load state", async () => {
+      const { pipeline } = createPipeline();
+      await pipeline.run();
+      const state = pipeline.state;
+
+      expect(pipeline.output).toEqual(42);
+
+      const { pipeline: newPipeline } = createPipeline();
+      newPipeline.loadState(state);
+
+      expect(newPipeline.output).toEqual(42);
+    });
+  });
 })

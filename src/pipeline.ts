@@ -1,3 +1,5 @@
+import {OutgoingMessage} from "node:http";
+
 export enum TaskStatus {
   PENDING = "pending",
   COMPLETED = "completed",
@@ -11,7 +13,14 @@ export enum PipelineStatus {
   FAILED = "failed",
 }
 
-type Task = {
+type NodeDefinition = OutputNode | TaskNode
+
+type OutputNode = {
+  id: 'output';
+  result: WrapRefOrValue<any>;
+}
+
+type TaskNode = {
   id: string;
   method: string[];
   args: any[];
@@ -81,7 +90,7 @@ type PipelineState = Record<
     status: TaskStatus;
     output: any;
   }
-> & { "output"?: WrapRefOrValue<any> };
+>
 
 export interface Methods
   extends Record<string, Methods | ((...args: any[]) => Promise<any>)> {}
@@ -102,7 +111,7 @@ export class Pipeline<T extends Methods, O> {
       onCompleted?: (state: PipelineState, output: O) => Promise<void>;
       serializeError?: (error: Error) => any;
       state?: PipelineState;
-      tasks?: Task[];
+      tasks?: TaskNode[];
     }
   ) {
     if (options?.state) {
@@ -116,20 +125,25 @@ export class Pipeline<T extends Methods, O> {
     }
   }
 
-  public get output() {
-      return this._state['output'];
-  }
-  public set output(output: WrapRefOrValue<O>) {
-    if (output == undefined) {
-      this._state['output'] = output;
-    } else {
-      this._state['output'] = this.toPlain(output)
+  public get output(): WrapRefOrValue<O> {
+    const node = findOutputNode(this._tasks)
+    if (!node) {
+      return undefined
     }
+    return this.replaceRefs(node)
   }
 
+  public set output(output: WrapRefOrValue<O>) {
+    if (findOutputNode(this._tasks) !== undefined) return;
+    const outputNode: OutputNode = {
+      id: 'output',
+      result: this.toPlain(output),
+    };
+    this._tasks.push(outputNode);
+  }
 
-  private _tasks: Task[] = [];
-  private _tasksById: Record<string, Task> = {};
+  private _tasks: NodeDefinition[] = [];
+  private _tasksById: Record<string, TaskNode> = {};
 
   private _state: PipelineState = {};
 
@@ -146,7 +160,7 @@ export class Pipeline<T extends Methods, O> {
     return newId;
   }
 
-  private addTask(task: Task) {
+  private addTask(task: TaskNode) {
     this._tasks.push(task);
     this._tasksById[task.id] = task;
   }
@@ -221,9 +235,10 @@ export class Pipeline<T extends Methods, O> {
   }
 
   private getTasksReadyToRun() {
-    const readyTasks: Task[] = [];
+    const readyTasks: TaskNode[] = [];
     for (const task of this._tasks) {
       if (
+        isTaskNode(task) &&
         this._state[task.id]?.status === undefined &&
         task.dependencies.every(
           (dep) => this._state[dep]?.status === TaskStatus.COMPLETED
@@ -367,7 +382,6 @@ export class Pipeline<T extends Methods, O> {
     this.isRunning = false;
 
     // resolve the output before completion
-    this.output = await this.replaceRefs(this.output);
     const output = this.output as O;
 
     await this.options?.onCompleted?.(this._state, output);
@@ -378,7 +392,7 @@ export class Pipeline<T extends Methods, O> {
   }
 
   get tasks() {
-    return this._tasks as Readonly<Task[]>;
+    return this._tasks as Readonly<TaskNode[]>;
   }
 
   loadState(state: PipelineState) {
@@ -409,4 +423,20 @@ export class Pipeline<T extends Methods, O> {
       .filter((task) => this._state[task.id] === undefined)
       .map((task) => this.createTaskObject(task.id));
   }
+}
+
+const findOutputNode = <O>(
+    nodes: NodeDefinition[],
+): WrapRefOrValue<O> => {
+    for (const node of nodes) {
+        if (node.id === 'output') {
+            return (node as OutputNode).result;
+        }
+    }
+    return undefined;
+}
+
+const isTaskNode = (node: NodeDefinition): node is TaskNode => {
+  const reservedNodes: Set<string> = new Set(['output']);
+  return !reservedNodes.has(node.id);
 }
