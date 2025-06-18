@@ -81,7 +81,7 @@ type PipelineState = Record<
     status: TaskStatus;
     output: any;
   }
->;
+> & { "output"?: WrapRefOrValue<any> };
 
 export interface Methods
   extends Record<string, Methods | ((...args: any[]) => Promise<any>)> {}
@@ -116,12 +116,15 @@ export class Pipeline<T extends Methods, O> {
     }
   }
 
-  private _output: WrapRefOrValue<O>
   public get output() {
-      return this._output;
+      return this._state['output'];
   }
   public set output(output: WrapRefOrValue<O>) {
-    this._output = this.toPlain(output)
+    if (output == undefined) {
+      this._state['output'] = output;
+    } else {
+      this._state['output'] = this.toPlain(output)
+    }
   }
 
 
@@ -364,8 +367,8 @@ export class Pipeline<T extends Methods, O> {
     this.isRunning = false;
 
     // resolve the output before completion
-    this._output = await this.replaceRefs(this._output);
-    const output = this._output as O;
+    this.output = await this.replaceRefs(this.output);
+    const output = this.output as O;
 
     await this.options?.onCompleted?.(this._state, output);
   }
@@ -378,11 +381,8 @@ export class Pipeline<T extends Methods, O> {
     return this._tasks as Readonly<Task[]>;
   }
 
-  loadState(state: PipelineState, output?: WrapRefOrValue<O>) {
+  loadState(state: PipelineState) {
     this._state = state;
-    if (output !== undefined) {
-      this.output = output;
-    }
   }
 
   task(taskId: string) {
