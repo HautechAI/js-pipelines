@@ -91,7 +91,7 @@ const path = (obj: any, path: string[]) => {
   return res;
 };
 
-export class Pipeline<T extends Methods> {
+export class Pipeline<T extends Methods, O> {
   constructor(
     private methods: T,
     private options?: {
@@ -99,7 +99,7 @@ export class Pipeline<T extends Methods> {
         update: { taskId: string; status: TaskStatus; output: any },
         state: PipelineState
       ) => Promise<void>;
-      onCompleted?: (state: PipelineState) => Promise<void>;
+      onCompleted?: (state: PipelineState, output: O) => Promise<void>;
       serializeError?: (error: Error) => any;
       state?: PipelineState;
       tasks?: Task[];
@@ -115,6 +115,15 @@ export class Pipeline<T extends Methods> {
       this.newTaskIndex = this.tasks.length;
     }
   }
+
+  private _output: WrapRefOrValue<O>
+  public get output() {
+      return this._output;
+  }
+  public set output(output: WrapRefOrValue<O>) {
+    this._output = this.toPlain(output)
+  }
+
 
   private _tasks: Task[] = [];
   private _tasksById: Record<string, Task> = {};
@@ -353,7 +362,12 @@ export class Pipeline<T extends Methods> {
     this.isRunning = true;
     await this.runReadyTasks();
     this.isRunning = false;
-    await this.options?.onCompleted?.(this._state);
+
+    // resolve the output before completion
+    this._output = await this.replaceRefs(this._output);
+    const output = this._output as O;
+
+    await this.options?.onCompleted?.(this._state, output);
   }
 
   get state() {

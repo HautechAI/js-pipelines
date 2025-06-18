@@ -570,3 +570,25 @@ describe("Pipeline with explicitly defined order", () => {
     });
   });
 });
+
+
+describe("Pipeline with an output", () => {
+  const createPipeline = () => {
+    const pipeline = new Pipeline(Methods);
+
+    const task1 = pipeline.defer.generateNumber();
+    const task2 = pipeline.defer.multiply(task1.result, 2);
+    const task3 = pipeline.defer.concat(pipeline.defer.toString(task2.result).result, " is the answer");
+
+    pipeline.output = task3.result
+
+    return { pipeline };
+  };
+
+  it('should resolve the output successfully', async () => {
+    const { pipeline } = createPipeline();
+    await pipeline.run();
+
+    expect(pipeline.output).toBe('84 is the answer');
+  });
+})

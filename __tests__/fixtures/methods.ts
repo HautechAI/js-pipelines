@@ -15,6 +15,17 @@ export const Methods = {
     return a * b;
   },
 
+  toString: async (a: number | boolean | string) => {
+    if (typeof a === "number") {
+      return a.toString();
+    } else if (typeof a === "boolean") {
+      return a ? "true" : "false";
+    } else if (typeof a === "string") {
+      return a;
+    }
+    throw new Error("Unsupported type");
+  },
+
   concat: async (a: string, b: string) => {
     return `${a}${b}`;
   },
