@@ -55,9 +55,14 @@ describe("Pipeline with a single method", () => {
     expect(pipeline.task(task1.id).id).toBe(task1.id);
   });
 
-  it("should throw on attempt to get task by unknown id", async () => {
+  it.skip("should throw on attempt to get task by unknown id", async () => {
     const { pipeline, task1 } = initPipeline();
     expect(() => pipeline.task("test")).toThrow();
+  });
+
+  it("should return null on attempt to get task by unknown id", async () => {
+    const { pipeline, task1 } = initPipeline();
+    expect(pipeline.task("test")).toEqual(null);
   });
 
   it("should allow to get failed tasks", async () => {
@@ -570,3 +575,56 @@ describe("Pipeline with explicitly defined order", () => {
     });
   });
 });
+
+
+describe("Pipeline with an output", () => {
+  const createPipeline = () => {
+    const pipeline = new Pipeline(Methods);
+
+    const task1 = pipeline.defer.generateNumber();
+    const task2 = pipeline.defer.multiply(task1.result, 2);
+    const task3 = pipeline.defer.concat(pipeline.defer.toString(task2.result).result, " is the answer");
+
+    return { task1, task2, task3, pipeline };
+  };
+
+  it('should resolve the output successfully - output is a string', async () => {
+    const { pipeline, task3 } = createPipeline();
+    pipeline.output = task3.result
+    await pipeline.run();
+
+    expect(pipeline.output).toEqual('84 is the answer');
+  });
+
+  it('should resolve the output successfully - output is an object', async () => {
+    const { pipeline, task3, task1 } = createPipeline();
+    pipeline.output = { "message": task3.result, generated: task1.result, "note": "This is an object" };
+    await pipeline.run();
+
+    expect(pipeline.output).toEqual({ "message": "84 is the answer", generated: 42, "note": "This is an object" });
+  });
+
+
+  describe("Load state", () => {
+    const createPipeline = () => {
+      const pipeline = new Pipeline(Methods);
+
+      const task1 = pipeline.defer.generateNumber();
+      pipeline.output = task1.result
+      return { task1, pipeline };
+    };
+
+    it("should load state", async () => {
+      const { pipeline } = createPipeline();
+      await pipeline.run();
+      const state = pipeline.state;
+
+      expect(pipeline.output).toEqual(42);
+
+      const { pipeline: newPipeline } = createPipeline();
+      newPipeline.loadState(state);
+
+      expect(newPipeline.output).toEqual(42);
+    });
+  });
+})

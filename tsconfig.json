@@ -3,7 +3,8 @@
         "esModuleInterop": true,
         "outDir": "./dist",
         "declaration": true,
-        "moduleResolution": "node"
+        "moduleResolution": "node",
+        "lib": ["es2022.error"]
     },
     "include": [
         "./src/**/*.ts"

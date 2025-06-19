@@ -11,7 +11,14 @@ export enum PipelineStatus {
   FAILED = "failed",
 }
 
-type Task = {
+type NodeDefinition = OutputNode | TaskNode
+
+type OutputNode = {
+  id: 'output';
+  result: WrapRefOrValue<any>;
+}
+
+type TaskNode = {
   id: string;
   method: string[];
   args: any[];
@@ -81,7 +88,7 @@ type PipelineState = Record<
     status: TaskStatus;
     output: any;
   }
->;
+>
 
 export interface Methods
   extends Record<string, Methods | ((...args: any[]) => Promise<any>)> {}
@@ -91,7 +98,7 @@ const path = (obj: any, path: string[]) => {
   return res;
 };
 
-export class Pipeline<T extends Methods> {
+export class Pipeline<T extends Methods, O> {
   constructor(
     private methods: T,
     private options?: {
@@ -99,10 +106,10 @@ export class Pipeline<T extends Methods> {
         update: { taskId: string; status: TaskStatus; output: any },
         state: PipelineState
       ) => Promise<void>;
-      onCompleted?: (state: PipelineState) => Promise<void>;
+      onCompleted?: (state: PipelineState, output: O) => Promise<void>;
       serializeError?: (error: Error) => any;
       state?: PipelineState;
-      tasks?: Task[];
+      tasks?: TaskNode[];
     }
   ) {
     if (options?.state) {
@@ -110,15 +117,35 @@ export class Pipeline<T extends Methods> {
     }
     if (options?.tasks) {
       options.tasks.forEach((task) => {
-        this.addTask(task);
+        this.addNode(task);
       });
       this.newTaskIndex = this.tasks.length;
     }
   }
 
-  private _tasks: Task[] = [];
-  private _tasksById: Record<string, Task> = {};
+  public get output(): O | null {
+    const node = findOutputNode(this._tasks)
+    if (node !== null) {
+      return null
+    }
+    try {
+      return replaceRefs(this._state, node)
+    } catch (e) {
+      if (e instanceof TaskNotReadyError) return null
+      throw new PipelineError(`Unexpected error while getting output, this is likely a bug`, { cause: e})
+    }
+  }
 
+  public set output(output: WrapRefOrValue<O>) {
+    if (findOutputNode(this._tasks) !== null) return;
+    const outputNode: OutputNode = {
+      id: 'output',
+      result: toPlain(output),
+    };
+    this.addNode(outputNode);
+  }
+
+  private _tasks: NodeDefinition[] = [];
   private _state: PipelineState = {};
 
   private runningTasks: Set<string> = new Set();
@@ -127,16 +154,17 @@ export class Pipeline<T extends Methods> {
 
   private newTaskIndex: number = 0;
   private getNewTaskId() {
+    const ids = new Set(this._tasks.map((task) => task.id));
+
     let newId: string;
     do {
       newId = `task${this.newTaskIndex++}`;
-    } while (this._tasksById[newId] !== undefined);
+    } while (ids.has(newId));
     return newId;
   }
 
-  private addTask(task: Task) {
+  private addNode(task: NodeDefinition) {
     this._tasks.push(task);
-    this._tasksById[task.id] = task;
   }
 
   private createDeferedMethods<T extends Methods>(
@@ -160,13 +188,13 @@ export class Pipeline<T extends Methods> {
 
           // if prop is a function, return a proxy function
           return (...args: any[]) => {
-            const serializedArgs = self.toPlain(args);
+            const serializedArgs = toPlain(args);
             const taskId = self.getNewTaskId();
-            self.addTask({
+            self.addNode({
               id: taskId,
               method: [...path, prop.toString()],
               args: serializedArgs,
-              dependencies: [...self.findRefs(serializedArgs), ...after],
+              dependencies: [...findRefs(serializedArgs), ...after],
             });
             return self.createTaskObject(taskId) as any;
           };
@@ -179,12 +207,12 @@ export class Pipeline<T extends Methods> {
     const self = this;
     return {
       id: taskId,
-      result: self.createResultReference(taskId),
+      result: createResultReference(taskId),
       status: () => {
         return self._state[taskId]?.status ?? TaskStatus.PENDING;
       },
       unwrap: async () => {
-        return await self.unwrap(self.createResultReference(taskId));
+        return await self.unwrap(createResultReference(taskId));
       },
       cancel: () => {
         self._tasks = self._tasks.filter((task) => task.id !== taskId);
@@ -194,24 +222,11 @@ export class Pipeline<T extends Methods> {
     };
   }
 
-  private createResultReference(taskId: string, path: string[] = []) {
-    const self = this;
-
-    const obj = { $ref: taskId, path };
-    return new Proxy(obj, {
-      get(target, prop, receiver) {
-        if (prop === "toJSON") {
-          return () => obj;
-        }
-        return self.createResultReference(taskId, [...path, prop.toString()]);
-      },
-    }) as any;
-  }
-
   private getTasksReadyToRun() {
-    const readyTasks: Task[] = [];
+    const readyTasks: TaskNode[] = [];
     for (const task of this._tasks) {
       if (
+        isTaskNode(task) &&
         this._state[task.id]?.status === undefined &&
         task.dependencies.every(
           (dep) => this._state[dep]?.status === TaskStatus.COMPLETED
@@ -227,13 +242,13 @@ export class Pipeline<T extends Methods> {
   private async runReadyTasks() {
     const tasks = this.getTasksReadyToRun();
     const promises = tasks.map(async (task) => {
-      this.startRunningTasks(task.id);
+      this.runningTasks.add(task.id);
       try {
         const method = path(this.methods, task.method);
         if (!method) {
-          throw new Error(`Method ${task.method.join(".")} not found`);
+          throw new MethodNotFoundError(task.method.join("."));
         }
-        const result = await method(...this.replaceRefs(task.args));
+        const result = await method(...replaceRefs(this._state, task.args));
         await this.updateState(task.id, TaskStatus.COMPLETED, result);
       } catch (e) {
         await this.updateState(
@@ -242,7 +257,7 @@ export class Pipeline<T extends Methods> {
           this.options?.serializeError ? this.options?.serializeError(e) : e
         );
       } finally {
-        this.endRunningTasks(task.id);
+        this.runningTasks.delete(task.id);
       }
 
       await this.runReadyTasks();
@@ -250,71 +265,9 @@ export class Pipeline<T extends Methods> {
     await Promise.all(promises);
   }
 
-  private startRunningTasks(taskId: string) {
-    this.runningTasks.add(taskId);
-  }
-
-  private endRunningTasks(taskId: string) {
-    this.runningTasks.delete(taskId);
-  }
-
   private async updateState(taskId: string, status: TaskStatus, output: any) {
     this._state[taskId] = { status, output };
     await this.options?.onChangeState?.({ taskId, status, output }, this._state);
-  }
-
-  private findRefs(obj: any) {
-    const findRefs = this.findRefs.bind(this);
-
-    if (Array.isArray(obj)) {
-      return obj.map(findRefs).flat();
-    }
-    if (typeof obj === "object") {
-      if (obj.$ref !== undefined) {
-        return obj.$ref;
-      } else {
-        return Object.values(obj).map(findRefs).flat();
-      }
-    }
-    return [];
-  }
-
-  private replaceRefs(obj: any) {
-    const replaceRefs = this.replaceRefs.bind(this);
-
-    if (Array.isArray(obj)) {
-      return obj.map(replaceRefs);
-    }
-
-    if (typeof obj === "object") {
-      // if obj has $ref property, replace it with the actual value
-      if (obj.$ref !== undefined) {
-        const task = this._state[obj.$ref];
-        if (task === undefined) {
-          throw new Error(`Task ${obj.$ref} is not ready`);
-        } else if (task.status === TaskStatus.FAILED) {
-          throw task.output;
-        } else {
-          // return output value at path
-          if (obj.path.length === 0) {
-            return task.output;
-          } else {
-            return path(task.output, obj.path);
-          }
-        }
-      } else {
-        // otherwise, replace refs in all the object values
-        return Object.fromEntries(
-          Object.entries(obj).map(([k, v]) => [k, replaceRefs(v)])
-        );
-      }
-    }
-    return obj;
-  }
-
-  // replace proxy objects with plain objects
-  private toPlain(v: any) {
-    return JSON.parse(JSON.stringify(v));
   }
 
   // public methods
@@ -328,8 +281,7 @@ export class Pipeline<T extends Methods> {
   }
 
   async unwrap<T>(value: T) {
-    const serializedValue = this.toPlain(value);
-    return this.replaceRefs(serializedValue) as UnwrapRef<T>;
+    return replaceRefs(this._state, toPlain(value)) as UnwrapRef<T>;
   }
 
   get status(): PipelineStatus {
@@ -353,7 +305,11 @@ export class Pipeline<T extends Methods> {
     this.isRunning = true;
     await this.runReadyTasks();
     this.isRunning = false;
-    await this.options?.onCompleted?.(this._state);
+
+    // resolve the output before completion
+    const output = this.output as O;
+
+    await this.options?.onCompleted?.(this._state, output);
   }
 
   get state() {
@@ -361,18 +317,18 @@ export class Pipeline<T extends Methods> {
   }
 
   get tasks() {
-    return this._tasks as Readonly<Task[]>;
+    return this._tasks as Readonly<TaskNode[]>;
   }
 
   loadState(state: PipelineState) {
     this._state = state;
   }
 
-  task(taskId: string) {
+  task(taskId: string): TaskOutput<any> | null {
     if (this._tasks.find((task) => task.id === taskId))
       return this.createTaskObject(taskId);
 
-    throw new Error(`Task ${taskId} not found`);
+    return null
   }
 
   failedTasks() {
@@ -391,5 +347,114 @@ export class Pipeline<T extends Methods> {
     return this._tasks
       .filter((task) => this._state[task.id] === undefined)
       .map((task) => this.createTaskObject(task.id));
+  }
+}
+
+const findOutputNode = <O>(
+    nodes: NodeDefinition[],
+): WrapRefOrValue<O> | null => {
+    for (const node of nodes) {
+        if (node.id === 'output') {
+            return (node as OutputNode).result;
+        }
+    }
+    return null;
+}
+
+const isTaskNode = (node: NodeDefinition): node is TaskNode => {
+  const reservedNodes: Set<string> = new Set(['output']);
+  return !reservedNodes.has(node.id);
+}
+
+// replace proxy objects with plain objects
+const toPlain = (value: any) => {
+  return JSON.parse(JSON.stringify(value));
+}
+
+const findRefs = (obj: any): string[] => {
+  if (Array.isArray(obj)) {
+    return obj.map(findRefs).flat();
+  }
+  if (typeof obj === "object") {
+    if (obj.$ref !== undefined) {
+      return [obj.$ref];
+    } else {
+      return Object.values(obj).map(findRefs).flat();
+    }
+  }
+  return [];
+}
+
+const createResultReference = (taskId: string, path: string[] = [])=>  {
+  const obj = { $ref: taskId, path };
+  return new Proxy(obj, {
+    get(target, prop, receiver) {
+      if (prop === "toJSON") {
+        return () => obj;
+      }
+      return createResultReference(taskId, [...path, prop.toString()]);
+    },
+  }) as any;
+}
+
+const replaceRefs = (state: PipelineState, obj: any) => {
+  if (Array.isArray(obj)) {
+    return obj.map(x => replaceRefs(state, x));
+  }
+
+  if (typeof obj === "object") {
+    // if obj has $ref property, replace it with the actual value
+    if (obj.$ref !== undefined) {
+      const task = state[obj.$ref];
+      if (task === undefined) {
+        throw new TaskNotReadyError(obj.$ref);
+      } else if (task.status === TaskStatus.FAILED) {
+        throw task.output;
+      } else {
+        // return output value at path
+        if (obj.path.length === 0) {
+          return task.output;
+        } else {
+          return path(task.output, obj.path);
+        }
+      }
+    } else {
+      // otherwise, replace refs in all the object values
+      return Object.fromEntries(
+          Object.entries(obj).map(([k, v]) => [k, replaceRefs(state, v)])
+      );
+    }
+  }
+  return obj;
+}
+
+
+export class PipelineError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message);
+    this.name = "PipelineError";
+    if (options?.cause) {
+      this.cause = options.cause;
+    }
+  }
+}
+
+export class MethodNotFoundError extends PipelineError {
+  constructor(method: string,  options?: ErrorOptions) {
+    super(`Method ${method} not found`);
+    this.name = "MethodNotFoundError";
+    if (options?.cause) {
+      this.cause = options.cause;
+    }
+  }
+}
+
+export class TaskNotReadyError extends PipelineError {
+  constructor(taskId: string, options?: ErrorOptions) {
+    super(`Task ${taskId} is not ready`);
+    this.name = "TaskNotReadyError";
+    if (options?.cause) {
+      this.cause = options.cause;
+    }
   }
 }
