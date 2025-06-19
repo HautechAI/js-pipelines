@@ -125,7 +125,7 @@ export class Pipeline<T extends Methods, O> {
 
   public get output(): O | null {
     const node = findOutputNode(this._tasks)
-    if (node !== null) {
+    if (node === null) {
       return null
     }
     try {
