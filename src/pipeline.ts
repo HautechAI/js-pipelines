@@ -352,7 +352,7 @@ export class Pipeline<T extends Methods, O> {
 
 const findOutputNode = <O>(
     nodes: NodeDefinition[],
-): WrapRefOrValue<O> => {
+): WrapRefOrValue<O> | undefined => {
     for (const node of nodes) {
         if (node.id === 'output') {
             return (node as OutputNode).result;
