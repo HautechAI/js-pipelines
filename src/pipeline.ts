@@ -254,7 +254,7 @@ export class Pipeline<T extends Methods, O = any> {
         await this.updateState(
           task.id,
           TaskStatus.FAILED,
-          this.options?.serializeError ? this.options?.serializeError(e) : e
+          this.options?.serializeError ? this.options?.serializeError(e as Error) : e
         );
       } finally {
         this.runningTasks.delete(task.id);
@@ -397,7 +397,7 @@ const createResultReference = (taskId: string, path: string[] = [])=>  {
   }) as any;
 }
 
-const replaceRefs = (state: PipelineState, obj: any) => {
+const replaceRefs = (state: PipelineState, obj: any): any => {
   if (Array.isArray(obj)) {
     return obj.map(x => replaceRefs(state, x));
   }

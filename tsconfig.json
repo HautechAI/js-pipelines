@@ -4,6 +4,7 @@
         "outDir": "./dist",
         "declaration": true,
         "moduleResolution": "node",
+        "strict": true,
         "lib": ["es2022.error"]
     },
     "include": [

@@ -52,7 +52,7 @@ describe("Pipeline with a single method", () => {
 
   it("should allow to get task by id", async () => {
     const { pipeline, task1 } = initPipeline();
-    expect(pipeline.task(task1.id).id).toBe(task1.id);
+    expect(pipeline.task(task1.id)!.id).toBe(task1.id);
   });
 
   it.skip("should throw on attempt to get task by unknown id", async () => {
