@@ -55,9 +55,14 @@ describe("Pipeline with a single method", () => {
     expect(pipeline.task(task1.id).id).toBe(task1.id);
   });
 
-  it("should throw on attempt to get task by unknown id", async () => {
+  it.skip("should throw on attempt to get task by unknown id", async () => {
     const { pipeline, task1 } = initPipeline();
     expect(() => pipeline.task("test")).toThrow();
+  });
+
+  it("should return null on attempt to get task by unknown id", async () => {
+    const { pipeline, task1 } = initPipeline();
+    expect(pipeline.task("test")).toEqual(null);
   });
 
   it("should allow to get failed tasks", async () => {
