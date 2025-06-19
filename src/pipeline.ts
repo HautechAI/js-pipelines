@@ -125,7 +125,7 @@ export class Pipeline<T extends Methods, O> {
 
   public get output(): O | null {
     const node = findOutputNode(this._tasks)
-    if (!node) {
+    if (node !== null) {
       return null
     }
     try {
@@ -137,7 +137,7 @@ export class Pipeline<T extends Methods, O> {
   }
 
   public set output(output: WrapRefOrValue<O>) {
-    if (findOutputNode(this._tasks) !== undefined) return;
+    if (findOutputNode(this._tasks) !== null) return;
     const outputNode: OutputNode = {
       id: 'output',
       result: toPlain(output),
@@ -352,13 +352,13 @@ export class Pipeline<T extends Methods, O> {
 
 const findOutputNode = <O>(
     nodes: NodeDefinition[],
-): WrapRefOrValue<O> | undefined => {
+): WrapRefOrValue<O> | null => {
     for (const node of nodes) {
         if (node.id === 'output') {
             return (node as OutputNode).result;
         }
     }
-    return undefined;
+    return null;
 }
 
 const isTaskNode = (node: NodeDefinition): node is TaskNode => {
