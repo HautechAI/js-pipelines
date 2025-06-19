@@ -1,5 +1,3 @@
-import {OutgoingMessage} from "node:http";
-
 export enum TaskStatus {
   PENDING = "pending",
   COMPLETED = "completed",
@@ -137,7 +135,7 @@ export class Pipeline<T extends Methods, O> {
     if (findOutputNode(this._tasks) !== undefined) return;
     const outputNode: OutputNode = {
       id: 'output',
-      result: this.toPlain(output),
+      result: toPlain(output),
     };
     this._tasks.push(outputNode);
   }
@@ -186,7 +184,7 @@ export class Pipeline<T extends Methods, O> {
 
           // if prop is a function, return a proxy function
           return (...args: any[]) => {
-            const serializedArgs = self.toPlain(args);
+            const serializedArgs = toPlain(args);
             const taskId = self.getNewTaskId();
             self.addTask({
               id: taskId,
@@ -254,7 +252,7 @@ export class Pipeline<T extends Methods, O> {
   private async runReadyTasks() {
     const tasks = this.getTasksReadyToRun();
     const promises = tasks.map(async (task) => {
-      this.startRunningTasks(task.id);
+      this.runningTasks.add(task.id);
       try {
         const method = path(this.methods, task.method);
         if (!method) {
@@ -269,22 +267,13 @@ export class Pipeline<T extends Methods, O> {
           this.options?.serializeError ? this.options?.serializeError(e) : e
         );
       } finally {
-        this.endRunningTasks(task.id);
+        this.runningTasks.delete(task.id);
       }
 
       await this.runReadyTasks();
     });
     await Promise.all(promises);
   }
-
-  private startRunningTasks(taskId: string) {
-    this.runningTasks.add(taskId);
-  }
-
-  private endRunningTasks(taskId: string) {
-    this.runningTasks.delete(taskId);
-  }
-
   private async updateState(taskId: string, status: TaskStatus, output: any) {
     this._state[taskId] = { status, output };
     await this.options?.onChangeState?.({ taskId, status, output }, this._state);
@@ -339,11 +328,6 @@ export class Pipeline<T extends Methods, O> {
     return obj;
   }
 
-  // replace proxy objects with plain objects
-  private toPlain(v: any) {
-    return JSON.parse(JSON.stringify(v));
-  }
-
   // public methods
 
   after(...taskIds: string[]) {
@@ -355,7 +339,7 @@ export class Pipeline<T extends Methods, O> {
   }
 
   async unwrap<T>(value: T) {
-    const serializedValue = this.toPlain(value);
+    const serializedValue = toPlain(value);
     return this.replaceRefs(serializedValue) as UnwrapRef<T>;
   }
 
@@ -439,4 +423,9 @@ const findOutputNode = <O>(
 const isTaskNode = (node: NodeDefinition): node is TaskNode => {
   const reservedNodes: Set<string> = new Set(['output']);
   return !reservedNodes.has(node.id);
+}
+
+// replace proxy objects with plain objects
+const toPlain = (value: any) => {
+  return JSON.parse(JSON.stringify(value));
 }
