@@ -98,7 +98,7 @@ const path = (obj: any, path: string[]) => {
   return res;
 };
 
-export class Pipeline<T extends Methods, O> {
+export class Pipeline<T extends Methods, O = any> {
   constructor(
     private methods: T,
     private options?: {
