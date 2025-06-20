@@ -1,4 +1,4 @@
-import { Pipeline, PipelineStatus, TaskStatus } from "../src";
+import {Pipeline, PipelineStatus, TaskNotReadyError, TaskStatus} from "../src";
 import { Methods } from "./fixtures/methods";
 
 describe("Empty pipeline", () => {

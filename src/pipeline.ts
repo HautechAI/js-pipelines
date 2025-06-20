@@ -131,8 +131,8 @@ export class Pipeline<T extends Methods, O = any> {
     try {
       return replaceRefs(this._state, node)
     } catch (e) {
-      if (e instanceof TaskNotReadyError) return null
-      throw new PipelineError(`Unexpected error while getting output, this is likely a bug`, { cause: e})
+      if ((e as Error).constructor.name == 'TaskNotReadyError') return null
+      throw new PipelineError(`Unexpected error while getting output, this is likely a bug`, { cause: e })
     }
   }
 
