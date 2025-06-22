@@ -624,6 +624,7 @@ describe("Pipeline with an output", () => {
       const { pipeline: newPipeline } = createPipeline();
       newPipeline.loadState(state);
 
+      expect(newPipeline.status).toBe(PipelineStatus.COMPLETED);
       expect(newPipeline.output).toEqual(42);
     });
   });

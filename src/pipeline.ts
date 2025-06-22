@@ -293,6 +293,8 @@ export class Pipeline<T extends Methods, O = any> {
 
     let hasUnprocessedTasks = false;
     for (const task of this._tasks) {
+      if (!isTaskNode(task)) continue;
+
       if (this._state[task.id]?.status === undefined) {
         hasUnprocessedTasks = true;
       }
