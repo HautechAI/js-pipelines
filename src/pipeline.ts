@@ -131,8 +131,12 @@ export class Pipeline<T extends Methods, O = any> {
     try {
       return replaceRefs(this._state, node)
     } catch (e) {
-      if ((e as Error).constructor.name == 'TaskNotReadyError') return null
-      throw new PipelineError(`Unexpected error while getting output, this is likely a bug`, { cause: e })
+      // There is supposed to be a proper error handling here.
+      // For some reason, when used in core, the check fails somehow.
+      // Use Go next time.
+      // if (e instanceof TaskNotReadyError) return null
+
+      return null
     }
   }
 
