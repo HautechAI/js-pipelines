@@ -1,4 +1,9 @@
-import {Pipeline, PipelineStatus, TaskNotReadyError, TaskStatus} from "../src";
+import {
+  Pipeline,
+  PipelineStatus,
+  TaskNotReadyError,
+  TaskStatus,
+} from "../src";
 import { Methods } from "./fixtures/methods";
 
 describe("Empty pipeline", () => {
@@ -7,7 +12,7 @@ describe("Empty pipeline", () => {
     expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
   });
 
-  it('should call onCompleted', async () => {
+  it("should call onCompleted", async () => {
     const onCompleted = jest.fn();
     const pipeline = new Pipeline(Methods, {
       onCompleted: (state) => onCompleted(state),
@@ -576,41 +581,50 @@ describe("Pipeline with explicitly defined order", () => {
   });
 });
 
-
 describe("Pipeline with an output", () => {
   const createPipeline = () => {
     const pipeline = new Pipeline(Methods);
 
     const task1 = pipeline.defer.generateNumber();
     const task2 = pipeline.defer.multiply(task1.result, 2);
-    const task3 = pipeline.defer.concat(pipeline.defer.toString(task2.result).result, " is the answer");
+    const task3 = pipeline.defer.concat(
+      pipeline.defer.toString(task2.result).result,
+      " is the answer"
+    );
 
     return { task1, task2, task3, pipeline };
   };
 
-  it('should resolve the output successfully - output is a string', async () => {
+  it("should resolve the output successfully - output is a string", async () => {
     const { pipeline, task3 } = createPipeline();
-    pipeline.output = task3.result
+    pipeline.output = task3.result;
     await pipeline.run();
 
-    expect(pipeline.output).toEqual('84 is the answer');
+    expect(pipeline.output).toEqual("84 is the answer");
   });
 
-  it('should resolve the output successfully - output is an object', async () => {
+  it("should resolve the output successfully - output is an object", async () => {
     const { pipeline, task3, task1 } = createPipeline();
-    pipeline.output = { "message": task3.result, generated: task1.result, "note": "This is an object" };
+    pipeline.output = {
+      message: task3.result,
+      generated: task1.result,
+      note: "This is an object",
+    };
     await pipeline.run();
 
-    expect(pipeline.output).toEqual({ "message": "84 is the answer", generated: 42, "note": "This is an object" });
+    expect(pipeline.output).toEqual({
+      message: "84 is the answer",
+      generated: 42,
+      note: "This is an object",
+    });
   });
-
 
   describe("Load state", () => {
     const createPipeline = () => {
       const pipeline = new Pipeline(Methods);
 
       const task1 = pipeline.defer.generateNumber();
-      pipeline.output = task1.result
+      pipeline.output = task1.result;
       return { task1, pipeline };
     };
 
@@ -628,4 +642,30 @@ describe("Pipeline with an output", () => {
       expect(newPipeline.output).toEqual(42);
     });
   });
-})
+});
+
+describe("Pipeline with taskIdGenerator", () => {
+  it("should generate unique task IDs", () => {
+    const pipeline = new Pipeline(Methods);
+    let id = 0;
+    pipeline.taskIdGenerator = () => `customTask${id++}`;
+    const task1 = pipeline.defer.generateNumber();
+    const task2 = pipeline.defer.generateNumber();
+
+    expect(task1.id).toBe("customTask0");
+    expect(task2.id).toBe("customTask1");
+  });
+
+  it("should allow to replace generator for some tasks", () => {
+    const pipeline = new Pipeline(Methods);
+    let id = 0;
+    pipeline.taskIdGenerator = () => `customTask${id++}`;
+
+    const task1 = pipeline.defer.generateNumber();
+    pipeline.taskIdGenerator = () => `anotherTask${id++}`;
+    const task2 = pipeline.defer.generateNumber();
+
+    expect(task1.id).toBe("customTask0");
+    expect(task2.id).toBe("anotherTask1");
+  });
+});

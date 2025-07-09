@@ -11,12 +11,12 @@ export enum PipelineStatus {
   FAILED = "failed",
 }
 
-type NodeDefinition = OutputNode | TaskNode
+type NodeDefinition = OutputNode | TaskNode;
 
 type OutputNode = {
-  id: 'output';
+  id: "output";
   result: WrapRefOrValue<any>;
-}
+};
 
 type TaskNode = {
   id: string;
@@ -73,7 +73,9 @@ type UnwrapRef<T> = //
     : never;
 
 type ChangeMethodSignature<T> = T extends (...args: infer P) => Promise<infer U>
-  ? (...args: { [K in keyof P]: WrapRefOrValue<P[K]> } ) => TaskOutput<WrapRef<U>>
+  ? (
+      ...args: { [K in keyof P]: WrapRefOrValue<P[K]> }
+    ) => TaskOutput<WrapRef<U>>
   : never;
 
 type ChangeMethodSignaturesInObject<T> = {
@@ -88,7 +90,7 @@ type PipelineState = Record<
     status: TaskStatus;
     output: any;
   }
->
+>;
 
 export interface Methods
   extends Record<string, Methods | ((...args: any[]) => Promise<any>)> {}
@@ -123,27 +125,29 @@ export class Pipeline<T extends Methods, O = any> {
     }
   }
 
+  public taskIdGenerator?: () => string;
+
   public get output(): O | null {
-    const node = findOutputNode(this._tasks)
+    const node = findOutputNode(this._tasks);
     if (node === null) {
-      return null
+      return null;
     }
     try {
-      return replaceRefs(this._state, node)
+      return replaceRefs(this._state, node);
     } catch (e) {
       // There is supposed to be a proper error handling here.
       // For some reason, when used in core, the check fails somehow.
       // Use Go next time.
       // if (e instanceof TaskNotReadyError) return null
 
-      return null
+      return null;
     }
   }
 
   public set output(output: WrapRefOrValue<O>) {
     if (findOutputNode(this._tasks) !== null) return;
     const outputNode: OutputNode = {
-      id: 'output',
+      id: "output",
       result: toPlain(output),
     };
     this.addNode(outputNode);
@@ -158,6 +162,10 @@ export class Pipeline<T extends Methods, O = any> {
 
   private newTaskIndex: number = 0;
   private getNewTaskId() {
+    if (this.taskIdGenerator) {
+      return this.taskIdGenerator();
+    }
+
     const ids = new Set(this._tasks.map((task) => task.id));
 
     let newId: string;
@@ -258,7 +266,9 @@ export class Pipeline<T extends Methods, O = any> {
         await this.updateState(
           task.id,
           TaskStatus.FAILED,
-          this.options?.serializeError ? this.options?.serializeError(e as Error) : e
+          this.options?.serializeError
+            ? this.options?.serializeError(e as Error)
+            : e
         );
       } finally {
         this.runningTasks.delete(task.id);
@@ -271,7 +281,10 @@ export class Pipeline<T extends Methods, O = any> {
 
   private async updateState(taskId: string, status: TaskStatus, output: any) {
     this._state[taskId] = { status, output };
-    await this.options?.onChangeState?.({ taskId, status, output }, this._state);
+    await this.options?.onChangeState?.(
+      { taskId, status, output },
+      this._state
+    );
   }
 
   // public methods
@@ -334,7 +347,7 @@ export class Pipeline<T extends Methods, O = any> {
     if (this._tasks.find((task) => task.id === taskId))
       return this.createTaskObject(taskId);
 
-    return null
+    return null;
   }
 
   failedTasks() {
@@ -357,25 +370,25 @@ export class Pipeline<T extends Methods, O = any> {
 }
 
 const findOutputNode = <O>(
-    nodes: NodeDefinition[],
+  nodes: NodeDefinition[]
 ): WrapRefOrValue<O> | null => {
-    for (const node of nodes) {
-        if (node.id === 'output') {
-            return (node as OutputNode).result;
-        }
+  for (const node of nodes) {
+    if (node.id === "output") {
+      return (node as OutputNode).result;
     }
-    return null;
-}
+  }
+  return null;
+};
 
 const isTaskNode = (node: NodeDefinition): node is TaskNode => {
-  const reservedNodes: Set<string> = new Set(['output']);
+  const reservedNodes: Set<string> = new Set(["output"]);
   return !reservedNodes.has(node.id);
-}
+};
 
 // replace proxy objects with plain objects
 const toPlain = (value: any) => {
   return JSON.parse(JSON.stringify(value));
-}
+};
 
 const findRefs = (obj: any): string[] => {
   if (Array.isArray(obj)) {
@@ -389,9 +402,9 @@ const findRefs = (obj: any): string[] => {
     }
   }
   return [];
-}
+};
 
-const createResultReference = (taskId: string, path: string[] = [])=>  {
+const createResultReference = (taskId: string, path: string[] = []) => {
   const obj = { $ref: taskId, path };
   return new Proxy(obj, {
     get(target, prop, receiver) {
@@ -401,11 +414,11 @@ const createResultReference = (taskId: string, path: string[] = [])=>  {
       return createResultReference(taskId, [...path, prop.toString()]);
     },
   }) as any;
-}
+};
 
 const replaceRefs = (state: PipelineState, obj: any): any => {
   if (Array.isArray(obj)) {
-    return obj.map(x => replaceRefs(state, x));
+    return obj.map((x) => replaceRefs(state, x));
   }
 
   if (typeof obj === "object") {
@@ -427,13 +440,12 @@ const replaceRefs = (state: PipelineState, obj: any): any => {
     } else {
       // otherwise, replace refs in all the object values
       return Object.fromEntries(
-          Object.entries(obj).map(([k, v]) => [k, replaceRefs(state, v)])
+        Object.entries(obj).map(([k, v]) => [k, replaceRefs(state, v)])
       );
     }
   }
   return obj;
-}
-
+};
 
 export class PipelineError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -446,7 +458,7 @@ export class PipelineError extends Error {
 }
 
 export class MethodNotFoundError extends PipelineError {
-  constructor(method: string,  options?: ErrorOptions) {
+  constructor(method: string, options?: ErrorOptions) {
     super(`Method ${method} not found`);
     this.name = "MethodNotFoundError";
     if (options?.cause) {

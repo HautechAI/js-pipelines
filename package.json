@@ -1,6 +1,6 @@
 {
   "name": "@hautechai/pipelines",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "description": "Framework to build and run pipelines in JavaScript",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
