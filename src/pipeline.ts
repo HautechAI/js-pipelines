@@ -37,7 +37,7 @@ export type TaskOutput<T> = {
 interface RefPrimitive<T extends string | number | boolean> {
   __kind__: T;
 }
-type WrapRef<T> = //
+export type WrapRef<T> = //
   // if T is a primitive, return a RefPrimitive
   T extends string | number | boolean
     ? RefPrimitive<T>
@@ -49,7 +49,7 @@ type WrapRef<T> = //
     ? { [Property in keyof T]: WrapRef<T[Property]> }
     : never;
 
-type WrapRefOrValue<T> = //
+export type WrapRefOrValue<T> = //
   // if T is a primitive, return a RefPrimitive
   T extends string | number | boolean
     ? RefPrimitive<T> | T
@@ -61,7 +61,7 @@ type WrapRefOrValue<T> = //
     ? { [Property in keyof T]: WrapRefOrValue<T[Property]> }
     : never;
 
-type UnwrapRef<T> = //
+export type UnwrapRef<T> = //
   T extends string | number | boolean
     ? T
     : T extends RefPrimitive<infer U>
