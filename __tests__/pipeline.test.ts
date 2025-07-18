@@ -669,3 +669,144 @@ describe("Pipeline with taskIdGenerator", () => {
     expect(task2.id).toBe("anotherTask1");
   });
 });
+
+describe("Pipeline with user input", () => {
+  it("should accept user input and make it accessible", async () => {
+    const userInput = { name: "John", age: 30 };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    expect(pipeline.input).not.toBeNull();
+  });
+
+  it("should return null when no user input is provided", async () => {
+    const pipeline = new Pipeline(Methods);
+    expect(pipeline.input).toBeNull();
+  });
+
+  it("should allow tasks to reference user input", async () => {
+    const userInput = { a: 10, b: 20 };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    const task1 = pipeline.defer.sumObjectFields(pipeline.input!);
+    await pipeline.run();
+
+    expect(await pipeline.unwrap(task1.result)).toBe(30);
+  });
+
+  it("should allow tasks to reference nested user input properties", async () => {
+    const userInput = { user: { name: "Alice" }, greeting: "Hello" };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    const task1 = pipeline.defer.concat(pipeline.input!.greeting, pipeline.input!.user.name);
+    await pipeline.run();
+
+    expect(await pipeline.unwrap(task1.result)).toBe("HelloAlice");
+  });
+
+  it("should allow mixing user input with task results", async () => {
+    const userInput = { multiplier: 3 };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    const task1 = pipeline.defer.generateNumber(); // returns 42
+    const task2 = pipeline.defer.multiply(task1.result, pipeline.input!.multiplier);
+    await pipeline.run();
+
+    expect(await pipeline.unwrap(task2.result)).toBe(126); // 42 * 3
+  });
+
+  it("should create $ref objects when accessing pipeline.input", async () => {
+    const userInput = { name: "John", age: 30 };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    const inputRef = pipeline.input!;
+    const serialized = JSON.parse(JSON.stringify(inputRef));
+
+    expect(serialized).toEqual({
+      $ref: "$input",
+      path: []
+    });
+  });
+
+  it("should create $ref objects with correct paths for nested input properties", async () => {
+    const userInput = { user: { name: "Alice", details: { age: 25 } } };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    const nameRef = pipeline.input!.user.name;
+    const ageRef = pipeline.input!.user.details.age;
+
+    const serializedName = JSON.parse(JSON.stringify(nameRef));
+    const serializedAge = JSON.parse(JSON.stringify(ageRef));
+
+    expect(serializedName).toEqual({
+      $ref: "$input",
+      path: ["user", "name"]
+    });
+
+    expect(serializedAge).toEqual({
+      $ref: "$input",
+      path: ["user", "details", "age"]
+    });
+  });
+
+  it("should resolve $input references correctly during task execution", async () => {
+    const userInput = { data: { value: 100 }, multiplier: 2 };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    // Create tasks that use $input references
+    const task1 = pipeline.defer.multiply(pipeline.input!.data.value, pipeline.input!.multiplier);
+    await pipeline.run();
+
+    expect(await pipeline.unwrap(task1.result)).toBe(200); // 100 * 2
+  });
+
+  it("should init pipeline with two tasks where second task takes input from task 1 and pipeline input", async () => {
+    const userInput = { baseValue: 5, multiplier: 3 };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    // Task 1: Generate a number (returns 42)
+    const task1 = pipeline.defer.generateNumber();
+
+    // Task 2: Takes result from task1 and multiplies by pipeline input
+    const task2 = pipeline.defer.multiply(task1.result, pipeline.input!.multiplier);
+
+    // Verify pipeline structure
+    expect(pipeline.tasks.length).toBe(2);
+    expect(pipeline.tasks[0].method[0]).toBe("generateNumber");
+    expect(pipeline.tasks[1].method[0]).toBe("multiply");
+
+    // Verify task dependencies
+    expect(pipeline.tasks[0].dependencies).toEqual([]);
+    expect(pipeline.tasks[1].dependencies).toEqual([task1.id, "$input"]);
+
+    // Run pipeline and verify results
+    await pipeline.run();
+
+    expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
+    expect(await pipeline.unwrap(task1.result)).toBe(42);
+    expect(await pipeline.unwrap(task2.result)).toBe(126); // 42 * 3
+  });
+
+  it("should handle complex pipeline with two tasks using different input properties", async () => {
+    const userInput = { 
+      config: { factor: 2 }, 
+      settings: { offset: 10 } 
+    };
+    const pipeline = new Pipeline(Methods, { input: userInput });
+
+    // Task 1: Generate number and multiply by config factor
+    const task1 = pipeline.defer.multiply(pipeline.input!.config.factor, 21); // 2 * 21 = 42
+
+    // Task 2: Take task1 result and add settings offset
+    const task2 = pipeline.defer.multiply(task1.result, 1); // Just pass through for now
+    const task3 = pipeline.defer.sumObjectFields({ 
+      a: task2.result, 
+      b: pipeline.input!.settings.offset 
+    });
+
+    await pipeline.run();
+
+    expect(await pipeline.unwrap(task1.result)).toBe(42); // 2 * 21
+    expect(await pipeline.unwrap(task2.result)).toBe(42); // pass through
+    expect(await pipeline.unwrap(task3.result)).toBe(52); // 42 + 10
+  });
+});

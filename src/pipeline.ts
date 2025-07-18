@@ -95,7 +95,7 @@ const path = (obj: any, path: string[]) => {
   return res;
 };
 
-export class Pipeline<T extends Methods, O = any> {
+export class Pipeline<T extends Methods, O = any, I = any> {
   constructor(
     private methods: T,
     private options?: {
@@ -107,6 +107,7 @@ export class Pipeline<T extends Methods, O = any> {
       serializeError?: (error: Error) => any;
       state?: PipelineState;
       tasks?: TaskNode[];
+      input?: I;
     },
   ) {
     if (options?.state) {
@@ -118,6 +119,9 @@ export class Pipeline<T extends Methods, O = any> {
       });
       this.newTaskIndex = this.tasks.length;
     }
+    if (options?.input !== undefined) {
+      this._input = options.input;
+    }
   }
 
   public taskIdGenerator?: () => string;
@@ -127,16 +131,24 @@ export class Pipeline<T extends Methods, O = any> {
       return null;
     }
 
-    return replaceRefs(this._state, this._output);
+    return replaceRefs(this._state, this._output, this._input);
   }
 
   public set output(output: WrapRefOrValue<O>) {
     this._output = toPlain(output);
   }
 
+  public get input(): I | null {
+    if (this._input === undefined) {
+      return null;
+    }
+    return createResultReference('$input') as I;
+  }
+
   private _tasks: NodeDefinition[] = [];
   private _state: PipelineState = {};
   private _output?: WrapRefOrValue<O>;
+  private _input?: I;
 
   private runningTasks: Set<string> = new Set();
 
@@ -220,10 +232,11 @@ export class Pipeline<T extends Methods, O = any> {
     const readyTasks: TaskNode[] = [];
     for (const task of this._tasks) {
       if (
-        isTaskNode(task) &&
         this._state[task.id]?.status === undefined &&
         task.dependencies.every(
-          (dep) => this._state[dep]?.status === TaskStatus.COMPLETED,
+          (dep) =>
+            dep === '$input' ||
+            this._state[dep]?.status === TaskStatus.COMPLETED,
         ) &&
         !this.runningTasks.has(task.id)
       ) {
@@ -242,7 +255,9 @@ export class Pipeline<T extends Methods, O = any> {
         if (!method) {
           throw new MethodNotFoundError(task.method.join('.'));
         }
-        const result = await method(...replaceRefs(this._state, task.args));
+        const result = await method(
+          ...replaceRefs(this._state, task.args, this._input),
+        );
         await this.updateState(task.id, TaskStatus.COMPLETED, result);
       } catch (e) {
         await this.updateState(
@@ -250,7 +265,7 @@ export class Pipeline<T extends Methods, O = any> {
           TaskStatus.FAILED,
           this.options?.serializeError
             ? this.options?.serializeError(e as Error)
-            : e
+            : e,
         );
       } finally {
         this.runningTasks.delete(task.id);
@@ -265,7 +280,7 @@ export class Pipeline<T extends Methods, O = any> {
     this._state[taskId] = { status, output };
     await this.options?.onChangeState?.(
       { taskId, status, output },
-      this._state
+      this._state,
     );
   }
 
@@ -280,7 +295,11 @@ export class Pipeline<T extends Methods, O = any> {
   }
 
   async unwrap<T>(value: T) {
-    return replaceRefs(this._state, toPlain(value)) as UnwrapRef<T>;
+    return replaceRefs(
+      this._state,
+      toPlain(value),
+      this._input,
+    ) as UnwrapRef<T>;
   }
 
   get status(): PipelineStatus {
@@ -288,8 +307,6 @@ export class Pipeline<T extends Methods, O = any> {
 
     let hasUnprocessedTasks = false;
     for (const task of this._tasks) {
-      if (!isTaskNode(task)) continue;
-
       if (this._state[task.id]?.status === undefined) {
         hasUnprocessedTasks = true;
       }
@@ -351,11 +368,6 @@ export class Pipeline<T extends Methods, O = any> {
   }
 }
 
-const isTaskNode = (node: NodeDefinition): node is TaskNode => {
-  const reservedNodes: Set<string> = new Set(["output"]);
-  return !reservedNodes.has(node.id);
-};
-
 // replace proxy objects with plain objects
 const toPlain = (value: any) => {
   return JSON.parse(JSON.stringify(value));
@@ -387,14 +399,27 @@ const createResultReference = (taskId: string, path: string[] = []) => {
   }) as any;
 };
 
-const replaceRefs = (state: PipelineState, obj: any): any => {
+const replaceRefs = (state: PipelineState, obj: any, userInput?: any): any => {
   if (Array.isArray(obj)) {
-    return obj.map((x) => replaceRefs(state, x));
+    return obj.map((x) => replaceRefs(state, x, userInput));
   }
 
   if (typeof obj === 'object') {
     // if obj has $ref property, replace it with the actual value
     if (obj.$ref !== undefined) {
+      // Handle special $input reference
+      if (obj.$ref === '$input') {
+        if (userInput === undefined) {
+          return null;
+        }
+        // return input value at path
+        if (obj.path.length === 0) {
+          return userInput;
+        } else {
+          return path(userInput, obj.path);
+        }
+      }
+
       const task = state[obj.$ref];
       if (task === undefined) {
         throw new TaskNotReadyError(obj.$ref);
@@ -411,7 +436,10 @@ const replaceRefs = (state: PipelineState, obj: any): any => {
     } else {
       // otherwise, replace refs in all the object values
       return Object.fromEntries(
-        Object.entries(obj).map(([k, v]) => [k, replaceRefs(state, v)])
+        Object.entries(obj).map(([k, v]) => [
+          k,
+          replaceRefs(state, v, userInput),
+        ]),
       );
     }
   }
