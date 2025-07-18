@@ -131,7 +131,11 @@ export class Pipeline<T extends Methods, O = any, I = any> {
       return null;
     }
 
-    return replaceRefs(this._state, this._output, this._input);
+    try {
+      return replaceRefs(this._state, this._output, this._input);
+    } catch (e) {
+      return null;
+    }
   }
 
   public set output(output: WrapRefOrValue<O>) {
