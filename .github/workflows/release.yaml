@@ -12,7 +12,6 @@ on:
 
 env:
   NODE_VERSION: 22
-  TAG_PREFIX: "@hautechai"
 
 permissions:
   contents: write
