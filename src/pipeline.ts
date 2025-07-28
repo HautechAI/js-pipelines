@@ -155,10 +155,7 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     this._output = toPlain(output);
   }
 
-  public get input(): WrapRefOrValue<I> | null {
-    if (this._input === undefined) {
-      return null;
-    }
+  public get inputRef(): WrapRefOrValue<I> | null {
     return createResultReference('$input') as WrapRefOrValue<I>;
   }
 
@@ -166,7 +163,7 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     this._input = toPlain(input);
   }
 
-  public get inputRef(): I | null {
+  public get input(): I | null {
     return this._input || null;
   }
 
