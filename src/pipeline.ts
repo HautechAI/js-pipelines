@@ -142,15 +142,19 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     this._output = toPlain(output);
   }
 
-  public get input(): I | null {
+  public get input(): WrapRefOrValue<I> | null {
     if (this._input === undefined) {
       return null;
     }
-    return createResultReference('$input') as I;
+    return createResultReference('$input') as WrapRefOrValue<I>;
   }
 
   public set input(input: I) {
     this._input = toPlain(input);
+  }
+
+  public get originalInput(): I | null {
+    return this._input || null;
   }
 
   private _tasks: NodeDefinition[] = [];
