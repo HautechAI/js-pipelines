@@ -149,6 +149,10 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     return createResultReference('$input') as I;
   }
 
+  public set input(input: I) {
+    this._input = toPlain(input);
+  }
+
   private _tasks: NodeDefinition[] = [];
   private _state: PipelineState = {};
   private _output?: WrapRefOrValue<O>;
