@@ -1,3 +1,5 @@
+import { MethodNotFoundError, TaskNotReadyError } from './errors';
+
 export enum TaskStatus {
   PENDING = 'pending',
   COMPLETED = 'completed',
@@ -141,7 +143,10 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     }
 
     try {
-      return replaceRefs(this._state, this._output, this._input);
+      return replaceRefs(this._output, {
+        state: this._state,
+        input: this._input,
+      });
     } catch (e) {
       return null;
     }
@@ -278,7 +283,7 @@ export class Pipeline<T extends Methods, O = any, I = any> {
           throw new MethodNotFoundError(task.method.join('.'));
         }
         const result = await method(
-          ...replaceRefs(this._state, task.args, this._input),
+          ...replaceRefs(task.args, { state: this._state, input: this._input }),
         );
         await this.updateState(task.id, TaskStatus.COMPLETED, result);
       } catch (e) {
@@ -316,12 +321,16 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     return this.createDeferedMethods(this.methods);
   }
 
+  /**
+   * Unwraps the value with references into a plain value.
+   * @param value The value to unwrap.
+   * @returns The unwrapped value.
+   */
   async unwrap<T>(value: T) {
-    return replaceRefs(
-      this._state,
-      toPlain(value),
-      this._input,
-    ) as UnwrapRef<T>;
+    return replaceRefs(toPlain(value), {
+      state: this._state,
+      input: this._input,
+    }) as UnwrapRef<T>;
   }
 
   get status(): PipelineStatus {
@@ -364,6 +373,11 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     this._state = state;
   }
 
+  /**
+   * Returns a task by its ID.
+   * @param taskId The ID of the task to retrieve.
+   * @returns The task object or null if not found.
+   */
   task(taskId: string): TaskOutput<any> | null {
     if (this._tasks.find((task) => task.id === taskId))
       return this.createTaskObject(taskId);
@@ -371,22 +385,71 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     return null;
   }
 
+  /**
+   * Returns tasks that are completed.
+   * @returns The completed tasks.
+   */
   failedTasks() {
     return this._tasks
       .filter((task) => this._state[task.id]?.status === TaskStatus.FAILED)
       .map((task) => this.createTaskObject(task.id));
   }
 
+  /**
+   * Returns tasks that are completed.
+   * @returns The completed tasks.
+   */
   completedTasks() {
     return this._tasks
       .filter((task) => this._state[task.id]?.status === TaskStatus.COMPLETED)
       .map((task) => this.createTaskObject(task.id));
   }
 
+  /**
+   * Returns tasks that are pending.
+   * @returns The pending tasks.
+   */
   pendingTasks() {
     return this._tasks
       .filter((task) => this._state[task.id] === undefined)
       .map((task) => this.createTaskObject(task.id));
+  }
+
+  /**
+   * Compacts the tasks by removing completed tasks and replacing references with actual values.
+   * @returns The compacted tasks.
+   */
+  compactTasks() {
+    const tasksToExecute = this._tasks.filter(
+      (task) => this._state[task.id]?.status !== TaskStatus.COMPLETED,
+    );
+    const tasksToExecuteIds = new Set(tasksToExecute.map((task) => task.id));
+
+    const compactedTasks = tasksToExecute.map((task) => {
+      return {
+        ...task,
+
+        // replace refs where possible
+        args: replaceRefs(
+          task.args,
+          {
+            state: this._state,
+          },
+          {
+            replaceInput: false,
+            throwOnFailed: false,
+            throwOnNotReady: false,
+          },
+        ),
+
+        // exclude dependencies that are not in tasksToExecute
+        dependencies: task.dependencies.filter((dep) =>
+          tasksToExecuteIds.has(dep),
+        ),
+      };
+    });
+
+    return compactedTasks;
   }
 }
 
@@ -421,9 +484,33 @@ const createResultReference = (taskId: string, path: string[] = []) => {
   }) as any;
 };
 
-const replaceRefs = (state: PipelineState, obj: any, userInput?: any): any => {
+/**
+ * Replaces reference objects in the input with actual values from pipeline state or input.
+ * @param obj The object to replace refs in.
+ * @param data The data for replacement, including pipeline state and optional input.
+ * @param [options] Options for replacement.
+ * @param [options.replaceInput=true] Whether to replace $input references.
+ * @param [options.throwOnFailed=true] Whether to throw if a referenced task failed.
+ * @param [options.throwOnNotReady=true] Whether to throw if a referenced task is not ready.
+ * @returns {any} The object with references replaced.
+ */
+const replaceRefs = (
+  obj: any,
+  data: { state: PipelineState; input?: any },
+  options?: {
+    replaceInput?: boolean;
+    throwOnFailed?: boolean;
+    throwOnNotReady?: boolean;
+  },
+): any => {
+  const {
+    replaceInput = true,
+    throwOnFailed = true,
+    throwOnNotReady = true,
+  } = options ?? {};
+
   if (Array.isArray(obj)) {
-    return obj.map((x) => replaceRefs(state, x, userInput));
+    return obj.map((x) => replaceRefs(x, data, options));
   }
 
   if (typeof obj === 'object') {
@@ -431,21 +518,25 @@ const replaceRefs = (state: PipelineState, obj: any, userInput?: any): any => {
     if (obj.$ref !== undefined) {
       // Handle special $input reference
       if (obj.$ref === '$input') {
-        if (userInput === undefined) {
+        if (!replaceInput) return obj;
+
+        if (data.input === undefined) {
           return null;
         }
         // return input value at path
         if (obj.path.length === 0) {
-          return userInput;
+          return data.input;
         } else {
-          return path(userInput, obj.path);
+          return path(data.input, obj.path);
         }
       }
 
-      const task = state[obj.$ref];
+      const task = data.state[obj.$ref];
       if (task === undefined) {
+        if (!throwOnNotReady) return obj;
         throw new TaskNotReadyError(obj.$ref);
       } else if (task.status === TaskStatus.FAILED) {
+        if (!throwOnFailed) return obj;
         throw task.output;
       } else {
         // return output value at path
@@ -458,42 +549,9 @@ const replaceRefs = (state: PipelineState, obj: any, userInput?: any): any => {
     } else {
       // otherwise, replace refs in all the object values
       return Object.fromEntries(
-        Object.entries(obj).map(([k, v]) => [
-          k,
-          replaceRefs(state, v, userInput),
-        ]),
+        Object.entries(obj).map(([k, v]) => [k, replaceRefs(v, data, options)]),
       );
     }
   }
   return obj;
 };
-
-export class PipelineError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message);
-    this.name = 'PipelineError';
-    if (options?.cause) {
-      this.cause = options.cause;
-    }
-  }
-}
-
-export class MethodNotFoundError extends PipelineError {
-  constructor(method: string, options?: ErrorOptions) {
-    super(`Method ${method} not found`);
-    this.name = 'MethodNotFoundError';
-    if (options?.cause) {
-      this.cause = options.cause;
-    }
-  }
-}
-
-export class TaskNotReadyError extends PipelineError {
-  constructor(taskId: string, options?: ErrorOptions) {
-    super(`Task ${taskId} is not ready`);
-    this.name = 'TaskNotReadyError';
-    if (options?.cause) {
-      this.cause = options.cause;
-    }
-  }
-}

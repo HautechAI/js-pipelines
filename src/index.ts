@@ -1,7 +1,6 @@
-export type { WrapRef, WrapRefOrValue, UnwrapRef } from "./pipeline";
-export { Pipeline, PipelineStatus, TaskStatus } from "./pipeline";
 export {
-  PipelineError,
-  MethodNotFoundError,
-  TaskNotReadyError,
-} from "./pipeline";
+  MethodNotFoundError, PipelineError, TaskNotReadyError
+} from "./errors";
+export { Pipeline, PipelineStatus, TaskStatus } from "./pipeline";
+export type { UnwrapRef, WrapRef, WrapRefOrValue } from "./pipeline";
+

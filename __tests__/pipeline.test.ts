@@ -1,8 +1,7 @@
 import {
   Pipeline,
   PipelineStatus,
-  TaskNotReadyError,
-  TaskStatus,
+  TaskStatus
 } from '../src';
 import { Methods } from './fixtures/methods';
 
@@ -430,6 +429,16 @@ describe('Pipeline with restored tasks and partially completed state', () => {
     await pipeline.run();
     expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
     expect(pipeline.unwrap(task2.result)).resolves.toBe('slept well');
+  });
+
+  it('should allow to compact tasks', async () => {
+    const { pipeline } = await initPipeline();
+
+    const compactTasks = pipeline.compactTasks();
+    expect(compactTasks.length).toBe(1);
+    expect(compactTasks[0].method).toEqual(['concat']);
+    expect(compactTasks[0].dependencies).toEqual([]);
+    expect(compactTasks[0].args).toEqual(['slept', ' well']);
   });
 });
 
