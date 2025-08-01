@@ -44,7 +44,7 @@ export type WrapRef<T> = //
       : // if T is an object, return an object with Ref<T> values
         T extends Record<any, any>
         ? { [Property in keyof T]: WrapRef<T[Property]> }
-        : never;
+        : T;
 
 export type WrapRefOrValue<T> = //
   // if T is a primitive, return a RefPrimitive
@@ -56,7 +56,7 @@ export type WrapRefOrValue<T> = //
       : // if T is an object, return an object with Ref<T> values
         T extends Record<any, any>
         ? { [Property in keyof T]: WrapRefOrValue<T[Property]> }
-        : never;
+        : T;
 
 export type UnwrapRef<T> = //
   T extends string | number | boolean
@@ -70,9 +70,9 @@ export type UnwrapRef<T> = //
           : never;
 
 type ChangeMethodSignature<T> = T extends (...args: infer P) => Promise<infer U>
-  ? (
+  ? <J = U>(
       ...args: { [K in keyof P]: WrapRefOrValue<P[K]> }
-    ) => TaskOutput<WrapRef<U>>
+    ) => TaskOutput<WrapRef<J>>
   : never;
 
 type ChangeMethodSignaturesInObject<T> = {
