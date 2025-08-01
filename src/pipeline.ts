@@ -126,13 +126,17 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     }
   }
 
-  public toJson() {
-    return JSON.stringify({
+  public toObject() {
+    return {
       tasks: this.tasks,
       outputRef: this.outputRef,
       state: this.state,
       inputRef: this.inputRef,
-    });
+    };
+  }
+
+  public toJson() {
+    return JSON.stringify(this.toObject());
   }
 
   public taskIdGenerator?: () => string;
