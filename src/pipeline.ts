@@ -468,7 +468,7 @@ const findRefs = (obj: any): string[] => {
   if (Array.isArray(obj)) {
     return obj.map(findRefs).flat();
   }
-  if (typeof obj === 'object') {
+  if (obj !== null && typeof obj === 'object') {
     if (obj.$ref !== undefined) {
       return [obj.$ref];
     } else {
@@ -519,7 +519,7 @@ const replaceRefs = (
     return obj.map((x) => replaceRefs(x, data, options));
   }
 
-  if (typeof obj === 'object') {
+  if (obj !== null && typeof obj === 'object') {
     // if obj has $ref property, replace it with the actual value
     if (obj.$ref !== undefined) {
       // Handle special $input reference
