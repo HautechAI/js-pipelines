@@ -69,13 +69,15 @@ export type UnwrapRef<T> = //
           ? { [Property in keyof T]: UnwrapRef<T[Property]> }
           : never;
 
-type ChangeMethodSignature<T> = T extends (...args: infer P) => Promise<infer U>
+export type ChangeMethodSignature<T> = T extends (
+  ...args: infer P
+) => Promise<infer U>
   ? <J = U>(
       ...args: { [K in keyof P]: WrapRefOrValue<P[K]> }
     ) => TaskOutput<WrapRef<J>>
   : never;
 
-type ChangeMethodSignaturesInObject<T> = {
+export type ChangeMethodSignaturesInObject<T> = {
   [Property in keyof T]: T[Property] extends (...args: any[]) => any
     ? ChangeMethodSignature<T[Property]>
     : ChangeMethodSignaturesInObject<T[Property]>;
