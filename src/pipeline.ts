@@ -31,7 +31,7 @@ export type TaskOutput<T> = {
   __taskOutput__: true;
 };
 
-interface RefPrimitive<T extends string | number | boolean> {
+export interface RefPrimitive<T extends string | number | boolean> {
   __kind__: T;
 }
 export type WrapRef<T> = //
