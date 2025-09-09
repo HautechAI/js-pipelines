@@ -136,7 +136,7 @@ export class Pipeline<T extends Methods, O = any, I = any> {
   public toObject() {
     return {
       tasks: this.tasks,
-      outputRef: this.getOutputRef(),
+      outputRef: this.$output,
       state: this.state,
       inputRef: this.$input,
     };
@@ -177,8 +177,12 @@ export class Pipeline<T extends Methods, O = any, I = any> {
       : null;
   }
 
-  public get $input(): WrapRefOrValue<I> | null {
+  public get $input() {
     return this.getInputRef();
+  }
+
+  public get $output() {
+    return this.getOutputRef();
   }
 
   public setInput(input: I) {
