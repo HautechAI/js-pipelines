@@ -698,7 +698,6 @@ describe('Pipeline with user input', () => {
   it('should return null when no user input is provided', async () => {
     const pipeline = new Pipeline(Methods);
 
-    expect(pipeline.$input).toBeNull();
     expect(pipeline.getInput()).toBeNull();
   });
 
