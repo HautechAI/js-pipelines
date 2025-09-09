@@ -9,6 +9,7 @@ module.exports = {
       {
         preset: 'angular',
         releaseRules: [
+          { breaking: true, release: 'major' },
           {
             type: 'docs',
             release: 'patch',
@@ -31,9 +32,9 @@ module.exports = {
         },
       },
     ],
-      "@semantic-release/release-notes-generator",
-      "@semantic-release/changelog",
-      "@semantic-release/npm",
-      "@semantic-release/github"
+    '@semantic-release/release-notes-generator',
+    '@semantic-release/changelog',
+    '@semantic-release/npm',
+    '@semantic-release/github',
   ],
 };

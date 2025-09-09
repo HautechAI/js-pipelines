@@ -1,8 +1,4 @@
-import {
-  Pipeline,
-  PipelineStatus,
-  TaskStatus
-} from '../src';
+import { Pipeline, PipelineStatus, TaskStatus } from '../src';
 import { Methods } from './fixtures/methods';
 
 describe('Empty pipeline', () => {
@@ -11,13 +7,24 @@ describe('Empty pipeline', () => {
     expect(pipeline.status).toBe(PipelineStatus.COMPLETED);
   });
 
-  it('should call onCompleted', async () => {
+  it('should call onCompleted with resolved output', async () => {
     const onCompleted = jest.fn();
     const pipeline = new Pipeline(Methods, {
-      onCompleted: (state) => onCompleted(state),
+      onCompleted,
     });
+    const task = pipeline.defer.generateNumber();
+    pipeline.setOutputRef(task.result);
+
     await pipeline.run();
-    expect(onCompleted).toHaveBeenCalled();
+    expect(onCompleted).toHaveBeenCalledWith(
+      {
+        task0: {
+          status: TaskStatus.COMPLETED,
+          output: 42,
+        },
+      },
+      42,
+    );
   });
 });
 
@@ -606,22 +613,22 @@ describe('Pipeline with an output', () => {
 
   it('should resolve the output successfully - output is a string', async () => {
     const { pipeline, task3 } = createPipeline();
-    pipeline.output = task3.result;
+    pipeline.setOutputRef(task3.result);
     await pipeline.run();
 
-    expect(pipeline.output).toEqual('84 is the answer');
+    expect(pipeline.getOutput()).toEqual('84 is the answer');
   });
 
   it('should resolve the output successfully - output is an object', async () => {
     const { pipeline, task3, task1 } = createPipeline();
-    pipeline.output = {
+    pipeline.setOutputRef({
       message: task3.result,
       generated: task1.result,
       note: 'This is an object',
-    };
+    });
     await pipeline.run();
 
-    expect(pipeline.output).toEqual({
+    expect(pipeline.getOutput()).toEqual({
       message: '84 is the answer',
       generated: 42,
       note: 'This is an object',
@@ -633,7 +640,7 @@ describe('Pipeline with an output', () => {
       const pipeline = new Pipeline(Methods);
 
       const task1 = pipeline.defer.generateNumber();
-      pipeline.output = task1.result;
+      pipeline.setOutputRef(task1.result);
       return { task1, pipeline };
     };
 
@@ -642,13 +649,13 @@ describe('Pipeline with an output', () => {
       await pipeline.run();
       const state = pipeline.state;
 
-      expect(pipeline.output).toEqual(42);
+      expect(pipeline.getOutput()).toEqual(42);
 
       const { pipeline: newPipeline } = createPipeline();
       newPipeline.loadState(state);
 
       expect(newPipeline.status).toBe(PipelineStatus.COMPLETED);
-      expect(newPipeline.output).toEqual(42);
+      expect(newPipeline.getOutput()).toEqual(42);
     });
   });
 });
@@ -684,19 +691,22 @@ describe('Pipeline with user input', () => {
     const userInput = { name: 'John', age: 30 };
     const pipeline = new Pipeline(Methods, { input: userInput });
 
-    expect(pipeline.input).not.toBeNull();
+    expect(pipeline.getInput()).not.toBeNull();
+    expect(pipeline.$input).not.toBeNull();
   });
 
   it('should return null when no user input is provided', async () => {
     const pipeline = new Pipeline(Methods);
-    expect(pipeline.input).toBeNull();
+
+    expect(pipeline.$input).toBeNull();
+    expect(pipeline.getInput()).toBeNull();
   });
 
   it('should allow tasks to reference user input', async () => {
     const userInput = { a: 10, b: 20 };
     const pipeline = new Pipeline(Methods, { input: userInput });
 
-    const task1 = pipeline.defer.sumObjectFields(pipeline.input!);
+    const task1 = pipeline.defer.sumObjectFields(pipeline.$input!);
     await pipeline.run();
 
     expect(await pipeline.unwrap(task1.result)).toBe(30);
@@ -707,8 +717,8 @@ describe('Pipeline with user input', () => {
     const pipeline = new Pipeline(Methods, { input: userInput });
 
     const task1 = pipeline.defer.concat(
-      pipeline.input!.greeting,
-      pipeline.input!.user.name,
+      pipeline.$input!.greeting,
+      pipeline.$input!.user.name,
     );
     await pipeline.run();
 
@@ -722,7 +732,7 @@ describe('Pipeline with user input', () => {
     const task1 = pipeline.defer.generateNumber(); // returns 42
     const task2 = pipeline.defer.multiply(
       task1.result,
-      pipeline.input!.multiplier,
+      pipeline.$input!.multiplier,
     );
     await pipeline.run();
 
@@ -733,7 +743,7 @@ describe('Pipeline with user input', () => {
     const userInput = { name: 'John', age: 30 };
     const pipeline = new Pipeline(Methods, { input: userInput });
 
-    const inputRef = pipeline.inputRef!;
+    const inputRef = pipeline.$input!;
     const serialized = JSON.parse(JSON.stringify(inputRef));
 
     expect(serialized).toEqual({
@@ -746,8 +756,8 @@ describe('Pipeline with user input', () => {
     const userInput = { user: { name: 'Alice', details: { age: 25 } } };
     const pipeline = new Pipeline(Methods, { input: userInput });
 
-    const nameRef = pipeline.inputRef!.user.name;
-    const ageRef = pipeline.inputRef!.user.details.age;
+    const nameRef = pipeline.$input!.user.name;
+    const ageRef = pipeline.$input!.user.details.age;
 
     const serializedName = JSON.parse(JSON.stringify(nameRef));
     const serializedAge = JSON.parse(JSON.stringify(ageRef));
@@ -769,8 +779,8 @@ describe('Pipeline with user input', () => {
 
     // Create tasks that use $input references
     const task1 = pipeline.defer.multiply(
-      pipeline.input!.data.value,
-      pipeline.input!.multiplier,
+      pipeline.$input!.data.value,
+      pipeline.$input!.multiplier,
     );
     await pipeline.run();
 
@@ -787,7 +797,7 @@ describe('Pipeline with user input', () => {
     // Task 2: Takes result from task1 and multiplies by pipeline input
     const task2 = pipeline.defer.multiply(
       task1.result,
-      pipeline.inputRef!.multiplier,
+      pipeline.$input!.multiplier,
     );
 
     // Verify pipeline structure
@@ -815,13 +825,13 @@ describe('Pipeline with user input', () => {
     const pipeline = new Pipeline(Methods, { input: userInput });
 
     // Task 1: Generate number and multiply by config factor
-    const task1 = pipeline.defer.multiply(pipeline.input!.config.factor, 21); // 2 * 21 = 42
+    const task1 = pipeline.defer.multiply(pipeline.$input!.config.factor, 21); // 2 * 21 = 42
 
     // Task 2: Take task1 result and add settings offset
     const task2 = pipeline.defer.multiply(task1.result, 1); // Just pass through for now
     const task3 = pipeline.defer.sumObjectFields({
       a: task2.result,
-      b: pipeline.input!.settings.offset,
+      b: pipeline.$input!.settings.offset,
     });
 
     await pipeline.run();

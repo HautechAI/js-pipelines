@@ -112,6 +112,7 @@ export class Pipeline<T extends Methods, O = any, I = any> {
       state?: PipelineState;
       tasks?: TaskNode[];
       input?: I;
+      outputRef?: WrapRefOrValue<O>;
     },
   ) {
     if (options?.state) {
@@ -126,14 +127,18 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     if (options?.input !== undefined) {
       this._input = options.input;
     }
+
+    if (options?.outputRef !== undefined) {
+      this._outputRef = options.outputRef;
+    }
   }
 
   public toObject() {
     return {
       tasks: this.tasks,
-      outputRef: this.outputRef,
+      outputRef: this.getOutputRef(),
       state: this.state,
-      inputRef: this.inputRef,
+      inputRef: this.$input,
     };
   }
 
@@ -143,13 +148,13 @@ export class Pipeline<T extends Methods, O = any, I = any> {
 
   public taskIdGenerator?: () => string;
 
-  public get output(): O | null {
-    if (!this._output) {
+  public getOutput(): O | null {
+    if (!this._outputRef) {
       return null;
     }
 
     try {
-      return replaceRefs(this._output, {
+      return replaceRefs(this._outputRef, {
         state: this._state,
         input: this._input,
       });
@@ -158,29 +163,35 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     }
   }
 
-  public get outputRef(): WrapRefOrValue<O> | null {
-    return this._output || null;
+  public getOutputRef(): WrapRefOrValue<O> | null {
+    return this._outputRef || null;
   }
 
-  public set output(output: WrapRefOrValue<O>) {
-    this._output = toPlain(output);
+  public setOutputRef(output: WrapRefOrValue<O>) {
+    this._outputRef = toPlain(output);
   }
 
-  public get inputRef(): WrapRefOrValue<I> | null {
-    return createResultReference('$input') as WrapRefOrValue<I>;
+  public getInputRef(): WrapRefOrValue<I> | null {
+    return this._input
+      ? (createResultReference('$input') as WrapRefOrValue<I>)
+      : null;
   }
 
-  public set input(input: I) {
+  public get $input(): WrapRefOrValue<I> | null {
+    return this.getInputRef();
+  }
+
+  public setInput(input: I) {
     this._input = toPlain(input);
   }
 
-  public get input(): I | null {
+  public getInput(): I | null {
     return this._input || null;
   }
 
   private _tasks: NodeDefinition[] = [];
   private _state: PipelineState = {};
-  private _output?: WrapRefOrValue<O>;
+  private _outputRef?: WrapRefOrValue<O>;
   private _input?: I;
 
   private runningTasks: Set<string> = new Set();
@@ -362,7 +373,7 @@ export class Pipeline<T extends Methods, O = any, I = any> {
     this.isRunning = false;
 
     // resolve the output before completion
-    const output = this.output as O;
+    const output = this.getOutput() as O;
 
     await this.options?.onCompleted?.(this._state, output);
   }
