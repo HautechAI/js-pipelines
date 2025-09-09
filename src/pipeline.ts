@@ -168,7 +168,8 @@ export class Pipeline<T extends Methods, O = any, I = any> {
   }
 
   public setOutputRef(output: WrapRefOrValue<O>) {
-    this._outputRef = toPlain(output);
+    this._outputRef =
+      output && typeof output === 'object' ? toPlain(output) : undefined;
   }
 
   public getInputRef(): WrapRefOrValue<I> {
